@@ -29,6 +29,20 @@ class MainActivity : FlutterActivity() {
                 pendingShakeEvent = true
             }
         }
+
+        fun notifyExpenseAddedFromOverlay(txnId: String, amount: Double, categoryName: String, note: String) {
+            instance?.runOnUiThread {
+                methodChannel?.invokeMethod(
+                    "onOverlayExpenseAdded",
+                    mapOf(
+                        "transaction_id" to txnId,
+                        "amount" to amount,
+                        "category_name" to categoryName,
+                        "note" to note
+                    )
+                )
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -145,6 +159,47 @@ class MainActivity : FlutterActivity() {
                 "openBatteryOptimizationSettings" -> {
                     openBatteryOptimizationSettingsInternal()
                     result.success(true)
+                }
+
+                "checkOverlayPermission" -> {
+                    val canDraw = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        Settings.canDrawOverlays(this)
+                    } else {
+                        true
+                    }
+                    result.success(canDraw)
+                }
+
+                "requestOverlayPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        try {
+                            val intent = Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                Uri.parse("package:$packageName")
+                            ).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        } catch (_: Exception) {
+                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                            }
+                            startActivity(intent)
+                            result.success(true)
+                        }
+                    } else {
+                        result.success(true)
+                    }
+                }
+
+                "showFloatingOverlay" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                        result.success(false)
+                    } else {
+                        FloatingExpenseOverlay.show(this)
+                        result.success(true)
+                    }
                 }
 
                 else -> result.notImplemented()

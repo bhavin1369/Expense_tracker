@@ -1,7 +1,7 @@
 # 📱 Shake Expense Tracker
 
 > **A Complete, Standalone, 100% Offline Android Expense Management Application built with Flutter & Dart.**  
-> Simply shake your phone to log an expense instantly — **even when the app is closed, minimized, or in another app!**  
+> Simply shake your phone to log an expense instantly with a **Direct Floating Expense Popup** — **even when the app is closed, on the home screen, or inside another app (Chrome, WhatsApp, etc.)!**  
 > Redesigned with a **clean, simple, beginner-friendly UI/UX** that anyone can understand effortlessly.
 
 ---
@@ -15,6 +15,37 @@ Shake Expense Tracker is an ultra-fast, offline-first personal financial manager
 - **NO Cloud / NO Backend**: No MySQL, no Node.js, no Express.js, no Firebase, no REST APIs, no hosting services.
 - **NO Login or Registration**: Open the app, enter your name once, and start managing expenses immediately.
 - **Independent Database & Workbook**: Each installed device maintains its own isolated SQLite database, user profile, custom categories, and permanent Excel workbook.
+
+---
+
+## 🚀 CRITICAL FEATURE: Direct Floating Expense Popup on Phone Shake
+
+Unlike standard apps that merely post a notification or force you to navigate through multiple screens, Shake Expense Tracker implements a **Native Android Floating Overlay** (`WindowManager` + `TYPE_APPLICATION_OVERLAY`) in Kotlin:
+
+```
+📱 PHONE SHAKE (Anywhere: Home Screen / Chrome / WhatsApp / App Closed)
+                  ↓
+       ✨ DIRECT FLOATING EXPENSE POPUP
+                  ↓
+         💰 ENTER AMOUNT (Auto-focused keyboard + quick chips)
+                  ↓
+       🏷️ SELECT CATEGORY (3-column compact grid + search)
+                  ↓
+          📝 ENTER NOTE (Optional note + quick chips)
+                  ↓
+           ✅ PRESS APPLY
+                  ↓
+  💾 SAVED DIRECTLY TO SQLITE & SYNCED TO PERMANENT EXCEL
+                  ↓
+   📳 HAPTIC VIBRATION + TOAST + OVERLAY AUTO-DISMISS
+```
+
+### Key Technical Characteristics of the Floating Overlay:
+1. **Zero App Switch Interruption**: Appears directly over the currently running app (WhatsApp, YouTube, Chrome, or Launcher) without launching Flutter's heavy activity.
+2. **Material Gold & Dark/White Card**: Premium 20dp rounded corners, gold border (`#D4AF37`), currency badge, and a dark scrim dismiss.
+3. **Soft Keyboard Integration**: Configured with `SOFT_INPUT_ADJUST_RESIZE` so the numeric keyboard displays immediately without occluding inputs.
+4. **Direct SQLite Persistence**: Writes transactions directly into the app's SQLite database (`databases/expense_tracker.db`) using the same unique transaction format (`TXN-YYYYMMDD-XXXX`).
+5. **Real-Time & Resumed Excel Sync**: Automatically appends transactions to `My_Expense_Tracker.xlsx` via MethodChannel if Flutter is running, or batches pending syncs upon next app launch.
 
 ---
 
@@ -232,8 +263,9 @@ lib/
 ### Native Android Layer:
 ```
 android/app/src/main/kotlin/com/fintech/expensetracker/expense_tracker/
-├── MainActivity.kt                    # MethodChannel handler, intent dispatcher, battery intents
-├── ShakeForegroundService.kt          # Foreground service with Accelerometer listener & notification
+├── MainActivity.kt                    # MethodChannel handler, overlay permission & event callbacks
+├── ShakeForegroundService.kt          # Foreground service with native SensorManager & overlay launcher
+├── FloatingExpenseOverlay.kt          # WindowManager TYPE_APPLICATION_OVERLAY floating dialog (UI + SQLite)
 └── BootReceiver.kt                    # BroadcastReceiver for BOOT_COMPLETED to restart service
 ```
 
@@ -258,12 +290,19 @@ build/app/outputs/flutter-apk/app-release.apk
 
 ---
 
-## 📲 How to Install & Verify on Android Devices
+## 📲 How to Configure & Verify Direct Floating Popup on Android Devices
 
-1. Transfer [`app-release.apk`](file:///d:/Expense_tracker/build/app/outputs/flutter-apk/app-release.apk) to any Android device.
-2. Tap the APK to install.
-3. Open the app and observe the clean, beginner-friendly interface:
-   - **Home**: Total Expenses This Month, Today's Expenses, 4 Quick Action buttons, Recent Expenses, and Monthly Spending chart.
-   - **Shake**: Shake your phone — the 3-step `Amount → Category → Note` bottom sheet appears immediately.
-   - **History**: Clean transaction cards with quick period chips (`All`, `Today`, `This Week`, `This Month`). Tap to edit or delete.
-   - **Settings**: 4 clean groups (`Profile`, `Shake Detection`, `Appearance`, `Data & Storage`).
+1. Transfer [`app-release.apk`](file:///d:/Expense_tracker/build/app/outputs/flutter-apk/app-release.apk) to any Android device and tap to install.
+2. Open **Settings** within the app:
+   - **Step 1**: Toggle **Background Shake Detection** to `ON`.
+   - **Step 2**: Tap **Grant** under **Floating Popup Permission** (`Settings.ACTION_MANAGE_OVERLAY_PERMISSION` / "Display over other apps") and allow permission. The badge will instantly change to green `GRANTED`.
+   - **Step 3**: Tap **Disable Battery Optimization** (`Ignore Battery Optimizations`) to keep the foreground service alive permanently in the background.
+   - **Step 4**: Tap **Test Floating Popup** to verify that the floating card opens right on top of your screen.
+3. **Real Physical Shake Testing**:
+   - Minimize or close the app.
+   - Open **Chrome**, **WhatsApp**, or stay on the **Android Home Screen**.
+   - **Shake your phone** firmly:
+     - The **Floating Expense Popup** instantly appears right in front of you.
+     - Enter amount (e.g., `250`), select category (e.g., `Food & Drinks`), enter note (e.g., `Lunch`), and tap **Apply**.
+     - Phone vibrates, Toast displays *"Expense Added Successfully!"*, and popup dismisses without disrupting your active app.
+   - Reopen Expense Tracker: the transaction is immediately visible in your History and synced into `My_Expense_Tracker.xlsx`.

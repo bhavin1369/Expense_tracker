@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../providers/expense_provider.dart';
+import '../providers/settings_provider.dart';
 import '../services/background_shake_service.dart';
 import '../services/shake_detection_service.dart';
 import '../utils/constants.dart';
@@ -48,6 +51,9 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     // Register shake callback to automatically launch expense entry sheet
     _shakeService.registerCallback(_onShakeTriggered);
     BackgroundShakeService.instance.registerBackgroundShakeCallback(_onShakeTriggered);
+
+    // Register callback for when an expense is added from native floating overlay
+    BackgroundShakeService.instance.registerOverlayExpenseAddedCallback(_onOverlayExpenseAdded);
   }
 
   void _onShakeTriggered() {
@@ -56,12 +62,28 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     ExpenseEntrySheet.show(context);
   }
 
+  void _onOverlayExpenseAdded(Map<String, dynamic> data) async {
+    if (!mounted) return;
+    debugPrint('Received overlay expense added event: $data');
+    final expenseProvider = context.read<ExpenseProvider>();
+    await expenseProvider.loadExpenses();
+    await expenseProvider.syncPendingExpenses();
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
       _shakeService.pause();
     } else if (state == AppLifecycleState.resumed) {
       _shakeService.resume();
+      if (mounted) {
+        context.read<SettingsProvider>().checkBackgroundServiceStatus();
+        context.read<ExpenseProvider>().loadExpenses().then((_) {
+          if (mounted) {
+            context.read<ExpenseProvider>().syncPendingExpenses();
+          }
+        });
+      }
     }
   }
 
@@ -70,6 +92,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     WidgetsBinding.instance.removeObserver(this);
     _shakeService.unregisterCallback();
     BackgroundShakeService.instance.unregisterBackgroundShakeCallback();
+    BackgroundShakeService.instance.unregisterOverlayExpenseAddedCallback();
     super.dispose();
   }
 

@@ -146,43 +146,55 @@ class ShakeForegroundService : Service(), SensorEventListener {
     private fun handleShakeDetected() {
         vibratePhone()
 
-        // 1. Notify Flutter if alive
-        MainActivity.notifyShakeFromBackground()
-
-        // 2. Prepare intent to open expense entry
-        val openIntent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_OPEN_SHAKE_EXPENSE, true)
+        val canDrawOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            android.provider.Settings.canDrawOverlays(this)
+        } else {
+            true
         }
 
-        // Try direct launch (works if Android allows it or when app is in recent/background)
-        try {
-            startActivity(openIntent)
-        } catch (_: Exception) {}
+        if (canDrawOverlay) {
+            // DIRECT FLOATING EXPENSE POPUP ON SHAKE OVER ANY APP
+            Handler(Looper.getMainLooper()).post {
+                FloatingExpenseOverlay.show(this)
+            }
+        } else {
+            // 1. Notify Flutter if alive
+            MainActivity.notifyShakeFromBackground()
 
-        // 3. Display High Priority Heads-up Notification
-        postShakeAlertNotification(openIntent)
+            // 2. Alert user that overlay permission is required
+            postOverlayPermissionAlertNotification()
+        }
     }
 
-    private fun postShakeAlertNotification(openIntent: Intent) {
+    private fun postOverlayPermissionAlertNotification() {
+        val permissionIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Intent(
+                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:$packageName")
+            ).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+        } else {
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+        }
+
         val pendingIntent = PendingIntent.getActivity(
             this,
-            1,
-            openIntent,
+            2,
+            permissionIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val alertNotification = NotificationCompat.Builder(this, CHANNEL_ALERT_ID)
-            .setContentTitle("Shake Detected! 📱")
-            .setContentText("Tap here to log your expense immediately")
-            .setSmallIcon(android.R.drawable.ic_input_add)
+            .setContentTitle("Display Over Other Apps Needed ⚠️")
+            .setContentText("Tap to allow overlay permission so expense popups appear directly on shake")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_input_add, "➕ Add Expense", pendingIntent)
-            .setFullScreenIntent(pendingIntent, false)
-            .setDefaults(Notification.DEFAULT_ALL)
+            .addAction(android.R.drawable.ic_menu_preferences, "Open Settings", pendingIntent)
             .build()
 
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
@@ -242,6 +254,7 @@ class ShakeForegroundService : Service(), SensorEventListener {
     private fun stopForegroundService() {
         isRunning = false
         unregisterSensorListener()
+        FloatingExpenseOverlay.dismiss()
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_SERVICE_ENABLED, false).apply()
 
@@ -257,6 +270,7 @@ class ShakeForegroundService : Service(), SensorEventListener {
     override fun onDestroy() {
         isRunning = false
         unregisterSensorListener()
+        FloatingExpenseOverlay.dismiss()
         super.onDestroy()
     }
 

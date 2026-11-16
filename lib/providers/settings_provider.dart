@@ -17,6 +17,7 @@ class SettingsProvider with ChangeNotifier {
   bool _isLoading = true;
   bool _isBackgroundServiceRunning = false;
   bool _isBatteryOptimizationIgnored = false;
+  bool _isOverlayPermissionGranted = false;
 
   UserSettingsModel get settings => _settings;
   bool get isLoading => _isLoading;
@@ -25,6 +26,7 @@ class SettingsProvider with ChangeNotifier {
   bool get backgroundShakeEnabled => _settings.backgroundShakeEnabled;
   bool get isBackgroundServiceRunning => _isBackgroundServiceRunning;
   bool get isBatteryOptimizationIgnored => _isBatteryOptimizationIgnored;
+  bool get isOverlayPermissionGranted => _isOverlayPermissionGranted;
   double get shakeSensitivity => _settings.shakeSensitivity;
   int get shakeCooldown => _settings.shakeCooldown;
   String get currency => _settings.currency;
@@ -73,7 +75,22 @@ class SettingsProvider with ChangeNotifier {
   Future<void> checkBackgroundServiceStatus() async {
     _isBackgroundServiceRunning = await _bgShakeService.isServiceRunning();
     _isBatteryOptimizationIgnored = await _bgShakeService.isBatteryOptimizationIgnored();
+    _isOverlayPermissionGranted = await _bgShakeService.isOverlayPermissionGranted();
     notifyListeners();
+  }
+
+  Future<void> checkOverlayPermissionStatus() async {
+    _isOverlayPermissionGranted = await _bgShakeService.isOverlayPermissionGranted();
+    notifyListeners();
+  }
+
+  Future<void> requestOverlayPermission() async {
+    await _bgShakeService.requestOverlayPermission();
+    await checkOverlayPermissionStatus();
+  }
+
+  Future<bool> showFloatingOverlay() async {
+    return await _bgShakeService.showFloatingOverlay();
   }
 
   Future<void> updateBackgroundShakeEnabled(bool enabled) async {

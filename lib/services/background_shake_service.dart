@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 typedef BackgroundShakeCallback = void Function();
+typedef OverlayExpenseAddedCallback = void Function(Map<String, dynamic> data);
 
 class BackgroundShakeService {
   BackgroundShakeService._privateConstructor() {
@@ -11,6 +12,7 @@ class BackgroundShakeService {
 
   static const MethodChannel _channel = MethodChannel('com.fintech.expensetracker/background_shake');
   BackgroundShakeCallback? _onShakeCallback;
+  OverlayExpenseAddedCallback? _onOverlayExpenseAddedCallback;
 
   void registerBackgroundShakeCallback(BackgroundShakeCallback callback) {
     _onShakeCallback = callback;
@@ -20,10 +22,26 @@ class BackgroundShakeService {
     _onShakeCallback = null;
   }
 
+  void registerOverlayExpenseAddedCallback(OverlayExpenseAddedCallback callback) {
+    _onOverlayExpenseAddedCallback = callback;
+  }
+
+  void unregisterOverlayExpenseAddedCallback() {
+    _onOverlayExpenseAddedCallback = null;
+  }
+
   Future<void> _handleNativeMethodCall(MethodCall call) async {
     if (call.method == 'onShakeDetected') {
       debugPrint('Background shake detected via Android Foreground Service!');
       _onShakeCallback?.call();
+    } else if (call.method == 'onOverlayExpenseAdded') {
+      debugPrint('Expense added via Native Floating Overlay: ${call.arguments}');
+      try {
+        final map = Map<String, dynamic>.from(call.arguments as Map);
+        _onOverlayExpenseAddedCallback?.call(map);
+      } catch (e) {
+        debugPrint('Error processing overlay expense payload: $e');
+      }
     }
   }
 
@@ -56,6 +74,36 @@ class BackgroundShakeService {
       return running ?? false;
     } catch (e) {
       debugPrint('Error checking if background service is running: $e');
+      return false;
+    }
+  }
+
+  Future<bool> isOverlayPermissionGranted() async {
+    try {
+      final bool? granted = await _channel.invokeMethod<bool>('checkOverlayPermission');
+      return granted ?? false;
+    } catch (e) {
+      debugPrint('Error checking overlay permission: $e');
+      return false;
+    }
+  }
+
+  Future<bool> requestOverlayPermission() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('requestOverlayPermission');
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Error requesting overlay permission: $e');
+      return false;
+    }
+  }
+
+  Future<bool> showFloatingOverlay() async {
+    try {
+      final bool? result = await _channel.invokeMethod<bool>('showFloatingOverlay');
+      return result ?? false;
+    } catch (e) {
+      debugPrint('Error triggering floating overlay: $e');
       return false;
     }
   }

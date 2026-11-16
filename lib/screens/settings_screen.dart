@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import '../providers/category_provider.dart';
 import '../providers/expense_provider.dart';
 import '../providers/settings_provider.dart';
-import '../services/shake_detection_service.dart';
 import '../utils/constants.dart';
 import '../utils/currency_formatter.dart';
 import 'category_management_screen.dart';
@@ -316,8 +315,46 @@ class SettingsScreen extends StatelessWidget {
             // ==========================================
             // GROUP 2: SHAKE – NORMAL AND BACKGROUND DETECTION
             // ==========================================
-            _buildGroupHeader('2. SHAKE DETECTION', isDark),
+            _buildGroupHeader('2. SHAKE DETECTION & FLOATING POPUP', isDark),
             const SizedBox(height: 8),
+
+            // 4-Step Setup Guide Card
+            Card(
+              elevation: 0,
+              color: isDark ? AppColors.darkCard : AppColors.lightCard,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(18),
+                side: BorderSide(
+                  color: AppColors.primaryGold.withValues(alpha: 0.35),
+                  width: 1.2,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.tips_and_updates_rounded, color: AppColors.primaryGold, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Floating Popup Setup Guide',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14.5),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _buildGuideStep('Step 1', 'Turn ON Background Shake Detection below.', settings.backgroundShakeEnabled),
+                    _buildGuideStep('Step 2', 'Grant "Display Over Other Apps" permission.', settings.isOverlayPermissionGranted),
+                    _buildGuideStep('Step 3', 'Allow notification for background foreground service.', true),
+                    _buildGuideStep('Step 4', 'Shake your phone in Chrome, WhatsApp, or Home screen!', settings.backgroundShakeEnabled && settings.isOverlayPermissionGranted),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+
             Card(
               elevation: 0,
               color: isDark ? AppColors.darkCard : AppColors.lightCard,
@@ -329,9 +366,9 @@ class SettingsScreen extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  // Normal Shake Toggle
+                  // Normal Foreground Shake Toggle
                   SwitchListTile(
-                    title: const Text('Shake to Add Expense', style: TextStyle(fontWeight: FontWeight.w700)),
+                    title: const Text('Foreground Shake Detection', style: TextStyle(fontWeight: FontWeight.w700)),
                     subtitle: const Text('Shake phone when app is open to log an expense'),
                     value: settings.shakeEnabled,
                     activeThumbColor: AppColors.primaryGold,
@@ -344,12 +381,80 @@ class SettingsScreen extends StatelessWidget {
                     // Background Shake Toggle
                     SwitchListTile(
                       title: const Text('Background Shake Detection', style: TextStyle(fontWeight: FontWeight.w700)),
-                      subtitle: const Text('Shake phone even when app is closed or in another app'),
+                      subtitle: const Text('Shake phone even when app is closed, on home screen, or in another app'),
                       value: settings.backgroundShakeEnabled,
                       activeThumbColor: AppColors.accentGreen,
                       onChanged: (val) async {
                         await settings.updateBackgroundShakeEnabled(val);
                       },
+                    ),
+                    const Divider(height: 1),
+                    // Floating Popup Permission Status (SYSTEM_ALERT_WINDOW)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Floating Popup Permission', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  settings.isOverlayPermissionGranted
+                                      ? 'Display Over Other Apps is granted ✓'
+                                      : 'Required for floating popup over other apps',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: settings.isOverlayPermissionGranted
+                                        ? AppColors.accentGreen
+                                        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (!settings.isOverlayPermissionGranted)
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primaryGold,
+                                foregroundColor: AppColors.darkNavy,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              onPressed: () async {
+                                await settings.requestOverlayPermission();
+                              },
+                              child: const Text('Grant', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+                            )
+                          else
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.accentGreen.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.accentGreen),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.check_circle_rounded, size: 14, color: AppColors.accentGreen),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'GRANTED',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.accentGreen,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                     const Divider(height: 1),
                     // Live Status Badge
@@ -361,14 +466,14 @@ class SettingsScreen extends StatelessWidget {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text('Background Status', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                              const Text('Floating Popup Ready', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
                               const SizedBox(height: 2),
                               Text(
-                                settings.backgroundShakeEnabled && settings.isBackgroundServiceRunning
-                                    ? 'Listening in background'
-                                    : settings.backgroundShakeEnabled
-                                        ? 'Service starting...'
-                                        : 'Disabled',
+                                settings.backgroundShakeEnabled && settings.isOverlayPermissionGranted
+                                    ? 'Direct popup active over all apps'
+                                    : !settings.backgroundShakeEnabled
+                                        ? 'Background detection is turned off'
+                                        : 'Grant overlay permission to activate popup',
                                 style: TextStyle(fontSize: 11.5, color: isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
                               ),
                             ],
@@ -376,13 +481,13 @@ class SettingsScreen extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: (settings.backgroundShakeEnabled && settings.isBackgroundServiceRunning
+                              color: (settings.backgroundShakeEnabled && settings.isOverlayPermissionGranted
                                       ? AppColors.accentGreen
                                       : Colors.grey)
                                   .withValues(alpha: 0.15),
                               borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: settings.backgroundShakeEnabled && settings.isBackgroundServiceRunning
+                                color: settings.backgroundShakeEnabled && settings.isOverlayPermissionGranted
                                     ? AppColors.accentGreen
                                     : Colors.grey,
                                 width: 1,
@@ -395,7 +500,7 @@ class SettingsScreen extends StatelessWidget {
                                   width: 7,
                                   height: 7,
                                   decoration: BoxDecoration(
-                                    color: settings.backgroundShakeEnabled && settings.isBackgroundServiceRunning
+                                    color: settings.backgroundShakeEnabled && settings.isOverlayPermissionGranted
                                         ? AppColors.accentGreen
                                         : Colors.grey,
                                     shape: BoxShape.circle,
@@ -403,13 +508,13 @@ class SettingsScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 5),
                                 Text(
-                                  settings.backgroundShakeEnabled && settings.isBackgroundServiceRunning
-                                      ? 'ACTIVE'
-                                      : 'INACTIVE',
+                                  settings.backgroundShakeEnabled && settings.isOverlayPermissionGranted
+                                      ? 'READY'
+                                      : 'NOT READY',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w800,
-                                    color: settings.backgroundShakeEnabled && settings.isBackgroundServiceRunning
+                                    color: settings.backgroundShakeEnabled && settings.isOverlayPermissionGranted
                                         ? AppColors.accentGreen
                                         : Colors.grey,
                                   ),
@@ -424,7 +529,7 @@ class SettingsScreen extends StatelessWidget {
                     // Battery Saver Exemption
                     ListTile(
                       leading: const Icon(Icons.battery_charging_full_rounded, color: AppColors.primaryGold),
-                      title: const Text('Battery Saver Guidance', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      title: const Text('Battery Optimization Guidance', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                       subtitle: Text(
                         settings.isBatteryOptimizationIgnored
                             ? 'Battery saver exempted (Recommended)'
@@ -472,11 +577,48 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ),
                     const Divider(height: 1),
-                    // Test Shake Button
+                    // Cooldown Slider
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text('Cooldown Duration', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                              Text(
+                                '${(settings.shakeCooldown / 1000).toStringAsFixed(1)}s',
+                                style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.primaryGold),
+                              ),
+                            ],
+                          ),
+                          Slider(
+                            value: settings.shakeCooldown.toDouble(),
+                            min: 1000,
+                            max: 4000,
+                            divisions: 6,
+                            activeColor: AppColors.primaryGold,
+                            onChanged: (val) {
+                              settings.updateShakeSettings(cooldown: val.toInt());
+                            },
+                          ),
+                          const Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('1.0s (Fast)', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                              Text('4.0s (Prevent accidental)', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    // Test Shake Detection
                     ListTile(
                       leading: const Icon(Icons.vibration_rounded, color: AppColors.primaryGold),
-                      title: const Text('Test Shake Detection', style: TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Test expense popup trigger'),
+                      title: const Text('Test Floating Popup', style: TextStyle(fontWeight: FontWeight.w700)),
+                      subtitle: const Text('Trigger the floating overlay directly to test on screen'),
                       trailing: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primaryGold,
@@ -484,11 +626,19 @@ class SettingsScreen extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                           visualDensity: VisualDensity.compact,
                         ),
-                        onPressed: () {
+                        onPressed: () async {
                           HapticFeedback.heavyImpact();
-                          ShakeDetectionService.instance.simulateShake();
+                          final showed = await settings.showFloatingOverlay();
+                          if (!showed && context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please grant "Display Over Other Apps" permission first.'),
+                                backgroundColor: AppColors.accentRed,
+                              ),
+                            );
+                          }
                         },
-                        child: const Text('Test Now', style: TextStyle(fontWeight: FontWeight.w700)),
+                        child: const Text('Test Overlay', style: TextStyle(fontWeight: FontWeight.w800)),
                       ),
                     ),
                   ],
@@ -637,6 +787,47 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 48),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildGuideStep(String stepLabel, String text, bool isCompleted) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: isCompleted
+                  ? AppColors.accentGreen.withValues(alpha: 0.18)
+                  : AppColors.primaryGold.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              stepLabel,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: isCompleted ? AppColors.accentGreen : AppColors.primaryGoldDark,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: isCompleted ? FontWeight.w600 : FontWeight.w500,
+                color: isCompleted ? AppColors.accentGreen : null,
+              ),
+            ),
+          ),
+          if (isCompleted)
+            const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.accentGreen),
+        ],
       ),
     );
   }
