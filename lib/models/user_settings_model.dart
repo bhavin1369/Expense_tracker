@@ -6,6 +6,7 @@ class UserSettingsModel {
   final bool shakeEnabled;
   final bool backgroundShakeEnabled;
   final double shakeSensitivity;
+  final String shakeSensitivityLevel; // 'low', 'medium', 'high'
   final int shakeCooldown;
   final String currency;
   final String currencySymbol;
@@ -20,7 +21,8 @@ class UserSettingsModel {
     this.userName = AppConstants.defaultUserName,
     this.shakeEnabled = true,
     this.backgroundShakeEnabled = false,
-    this.shakeSensitivity = AppConstants.defaultShakeSensitivity,
+    double? shakeSensitivity,
+    String? shakeSensitivityLevel,
     this.shakeCooldown = AppConstants.defaultShakeCooldown,
     this.currency = AppConstants.defaultCurrency,
     this.currencySymbol = AppConstants.defaultCurrencySymbol,
@@ -29,8 +31,31 @@ class UserSettingsModel {
     this.lastExcelSync,
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : createdAt = createdAt ?? DateTime.now(),
+  })  : shakeSensitivityLevel = shakeSensitivityLevel ?? _resolveLevel(shakeSensitivity),
+        shakeSensitivity = shakeSensitivity != null && shakeSensitivity <= 6.0
+            ? shakeSensitivity
+            : _resolveThreshold(shakeSensitivityLevel ?? _resolveLevel(shakeSensitivity)),
+        createdAt = createdAt ?? DateTime.now(),
         updatedAt = updatedAt ?? DateTime.now();
+
+  static String _resolveLevel(double? threshold) {
+    if (threshold == null || threshold > 6.0) return AppConstants.defaultShakeSensitivityLevel;
+    if (threshold <= 2.7) return 'high';
+    if (threshold <= 3.8) return 'medium';
+    return 'low';
+  }
+
+  static double _resolveThreshold(String level) {
+    switch (level.toLowerCase()) {
+      case 'high':
+        return AppConstants.shakeThresholdHigh;
+      case 'low':
+        return AppConstants.shakeThresholdLow;
+      case 'medium':
+      default:
+        return AppConstants.shakeThresholdMedium;
+    }
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -39,6 +64,7 @@ class UserSettingsModel {
       'shake_enabled': shakeEnabled ? 1 : 0,
       'background_shake_enabled': backgroundShakeEnabled ? 1 : 0,
       'shake_sensitivity': shakeSensitivity,
+      'shake_sensitivity_level': shakeSensitivityLevel,
       'shake_cooldown': shakeCooldown,
       'currency': currency,
       'currency_symbol': currencySymbol,
@@ -51,12 +77,16 @@ class UserSettingsModel {
   }
 
   factory UserSettingsModel.fromMap(Map<String, dynamic> map) {
+    final rawSens = (map['shake_sensitivity'] as num?)?.toDouble();
+    final rawLevel = map['shake_sensitivity_level'] as String?;
+
     return UserSettingsModel(
       id: map['id'] as int? ?? 1,
       userName: map['user_name'] as String? ?? AppConstants.defaultUserName,
       shakeEnabled: (map['shake_enabled'] as int? ?? 1) == 1,
       backgroundShakeEnabled: (map['background_shake_enabled'] as int? ?? 0) == 1,
-      shakeSensitivity: (map['shake_sensitivity'] as num?)?.toDouble() ?? AppConstants.defaultShakeSensitivity,
+      shakeSensitivity: rawSens,
+      shakeSensitivityLevel: rawLevel,
       shakeCooldown: map['shake_cooldown'] as int? ?? AppConstants.defaultShakeCooldown,
       currency: map['currency'] as String? ?? AppConstants.defaultCurrency,
       currencySymbol: map['currency_symbol'] as String? ?? AppConstants.defaultCurrencySymbol,
@@ -80,6 +110,7 @@ class UserSettingsModel {
     bool? shakeEnabled,
     bool? backgroundShakeEnabled,
     double? shakeSensitivity,
+    String? shakeSensitivityLevel,
     int? shakeCooldown,
     String? currency,
     String? currencySymbol,
@@ -89,12 +120,16 @@ class UserSettingsModel {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
+    final newLevel = shakeSensitivityLevel ?? (shakeSensitivity != null ? _resolveLevel(shakeSensitivity) : this.shakeSensitivityLevel);
+    final newThreshold = shakeSensitivity ?? (shakeSensitivityLevel != null ? _resolveThreshold(shakeSensitivityLevel) : this.shakeSensitivity);
+
     return UserSettingsModel(
       id: id ?? this.id,
       userName: userName ?? this.userName,
       shakeEnabled: shakeEnabled ?? this.shakeEnabled,
       backgroundShakeEnabled: backgroundShakeEnabled ?? this.backgroundShakeEnabled,
-      shakeSensitivity: shakeSensitivity ?? this.shakeSensitivity,
+      shakeSensitivity: newThreshold,
+      shakeSensitivityLevel: newLevel,
       shakeCooldown: shakeCooldown ?? this.shakeCooldown,
       currency: currency ?? this.currency,
       currencySymbol: currencySymbol ?? this.currencySymbol,

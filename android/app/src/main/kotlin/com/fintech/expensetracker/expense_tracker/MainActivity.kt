@@ -22,6 +22,9 @@ class MainActivity : FlutterActivity() {
         private var methodChannel: MethodChannel? = null
         private var pendingShakeEvent: Boolean = false
 
+        var isAppInForeground: Boolean = false
+            private set
+
         fun notifyShakeFromBackground() {
             instance?.runOnUiThread {
                 methodChannel?.invokeMethod("onShakeDetected", null)
@@ -65,6 +68,16 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        isAppInForeground = true
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isAppInForeground = false
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -72,8 +85,8 @@ class MainActivity : FlutterActivity() {
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startBackgroundService" -> {
-                    val sensitivity = (call.argument<Double>("sensitivity") ?: 14.0).toFloat()
-                    val cooldown = (call.argument<Int>("cooldown") ?: 2000).toLong()
+                    val sensitivity = (call.argument<Double>("sensitivity") ?: 3.0).toFloat()
+                    val cooldown = (call.argument<Int>("cooldown") ?: 2500).toLong()
 
                     val intent = Intent(this, ShakeForegroundService::class.java).apply {
                         action = ShakeForegroundService.ACTION_START
@@ -86,6 +99,24 @@ class MainActivity : FlutterActivity() {
                     } else {
                         startService(intent)
                     }
+                    result.success(true)
+                }
+
+                "updateShakeConfig" -> {
+                    val sensitivity = (call.argument<Double>("sensitivity") ?: 3.0).toFloat()
+                    val cooldown = (call.argument<Int>("cooldown") ?: 2500).toLong()
+
+                    ShakeForegroundService.updateRunningConfig(sensitivity, cooldown)
+
+                    val intent = Intent(this, ShakeForegroundService::class.java).apply {
+                        action = ShakeForegroundService.ACTION_UPDATE_CONFIG
+                        putExtra(ShakeForegroundService.EXTRA_SENSITIVITY, sensitivity)
+                        putExtra(ShakeForegroundService.EXTRA_COOLDOWN, cooldown)
+                    }
+                    try {
+                        startService(intent)
+                    } catch (_: Exception) {}
+
                     result.success(true)
                 }
 

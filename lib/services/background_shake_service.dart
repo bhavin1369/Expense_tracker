@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import '../utils/constants.dart';
 
 typedef BackgroundShakeCallback = void Function();
 typedef OverlayExpenseAddedCallback = void Function(Map<String, dynamic> data);
@@ -45,7 +46,10 @@ class BackgroundShakeService {
     }
   }
 
-  Future<bool> startService({double sensitivity = 14.0, int cooldown = 2000}) async {
+  Future<bool> startService({
+    double sensitivity = AppConstants.defaultShakeSensitivity,
+    int cooldown = AppConstants.defaultShakeCooldown,
+  }) async {
     try {
       final bool? success = await _channel.invokeMethod<bool>('startBackgroundService', {
         'sensitivity': sensitivity,
@@ -54,6 +58,22 @@ class BackgroundShakeService {
       return success ?? false;
     } catch (e) {
       debugPrint('Error starting background shake service: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateConfig({
+    required double sensitivity,
+    required int cooldown,
+  }) async {
+    try {
+      final bool? success = await _channel.invokeMethod<bool>('updateShakeConfig', {
+        'sensitivity': sensitivity,
+        'cooldown': cooldown,
+      });
+      return success ?? false;
+    } catch (e) {
+      debugPrint('Error updating background shake service config: $e');
       return false;
     }
   }

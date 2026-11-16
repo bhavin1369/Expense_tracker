@@ -10,6 +10,7 @@ import '../utils/constants.dart';
 import '../utils/currency_formatter.dart';
 import 'category_management_screen.dart';
 import 'excel_management_screen.dart';
+import 'shake_debug_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -540,78 +541,70 @@ class SettingsScreen extends StatelessWidget {
                       onTap: () => _showBatteryGuidanceDialog(context),
                     ),
                     const Divider(height: 1),
-                    // Sensitivity Slider
+                    // Sensitivity 3-Option Selector
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Shake Sensitivity', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                              const Text('Shake Sensitivity', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
                               Text(
-                                '${settings.shakeSensitivity.toStringAsFixed(1)} m/s²',
-                                style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.primaryGold),
+                                '${settings.shakeSensitivityLevel.toUpperCase()} (${settings.shakeSensitivity.toStringAsFixed(1)} m/s²)',
+                                style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primaryGold, fontSize: 12),
                               ),
                             ],
                           ),
-                          Slider(
-                            value: settings.shakeSensitivity,
-                            min: 10.0,
-                            max: 25.0,
-                            divisions: 15,
-                            activeColor: AppColors.primaryGold,
-                            onChanged: (val) {
-                              settings.updateShakeSettings(sensitivity: val);
-                            },
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Requires 4 alternating shake peaks. Pocket removal and table lifts are rejected.',
+                            style: TextStyle(fontSize: 11, color: Colors.grey),
                           ),
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          const SizedBox(height: 10),
+                          Row(
                             children: [
-                              Text('Easier shake', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-                              Text('Harder shake', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+                              _buildSensitivityCard(
+                                label: 'Low',
+                                desc: 'Firm Shake',
+                                isSelected: settings.shakeSensitivityLevel.toLowerCase() == 'low',
+                                onTap: () => settings.updateShakeSensitivityLevel('low'),
+                                isDark: isDark,
+                              ),
+                              const SizedBox(width: 8),
+                              _buildSensitivityCard(
+                                label: 'Medium',
+                                desc: 'Recommended',
+                                isSelected: settings.shakeSensitivityLevel.toLowerCase() == 'medium',
+                                onTap: () => settings.updateShakeSensitivityLevel('medium'),
+                                isDark: isDark,
+                              ),
+                              const SizedBox(width: 8),
+                              _buildSensitivityCard(
+                                label: 'High',
+                                desc: 'Light Shake',
+                                isSelected: settings.shakeSensitivityLevel.toLowerCase() == 'high',
+                                onTap: () => settings.updateShakeSensitivityLevel('high'),
+                                isDark: isDark,
+                              ),
                             ],
                           ),
                         ],
                       ),
                     ),
                     const Divider(height: 1),
-                    // Cooldown Slider
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text('Cooldown Duration', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
-                              Text(
-                                '${(settings.shakeCooldown / 1000).toStringAsFixed(1)}s',
-                                style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.primaryGold),
-                              ),
-                            ],
-                          ),
-                          Slider(
-                            value: settings.shakeCooldown.toDouble(),
-                            min: 1000,
-                            max: 4000,
-                            divisions: 6,
-                            activeColor: AppColors.primaryGold,
-                            onChanged: (val) {
-                              settings.updateShakeSettings(cooldown: val.toInt());
-                            },
-                          ),
-                          const Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('1.0s (Fast)', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-                              Text('4.0s (Prevent accidental)', style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
-                            ],
-                          ),
-                        ],
-                      ),
+                    // Live Sensor Debugger Entry
+                    ListTile(
+                      leading: const Icon(Icons.bug_report_rounded, color: AppColors.primaryGold),
+                      title: const Text('Shake Sensor Debugger', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      subtitle: const Text('Live magnitude gauge, 4-peak validator & pocket test', style: TextStyle(fontSize: 11.5)),
+                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(builder: (_) => const ShakeDebugScreen()),
+                        );
+                      },
                     ),
                     const Divider(height: 1),
                     // Test Shake Detection
@@ -828,6 +821,58 @@ class SettingsScreen extends StatelessWidget {
           if (isCompleted)
             const Icon(Icons.check_circle_rounded, size: 16, color: AppColors.accentGreen),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSensitivityCard({
+    required String label,
+    required String desc,
+    required bool isSelected,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? AppColors.primaryGold.withValues(alpha: 0.18)
+                : (isDark ? const Color(0xFF161616) : Colors.white),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? AppColors.primaryGold : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Column(
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: isSelected ? AppColors.primaryGoldDark : null,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                desc,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? AppColors.primaryGoldDark : Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

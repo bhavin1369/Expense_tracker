@@ -6,7 +6,7 @@ import '../models/user_settings_model.dart';
 
 class DatabaseHelper {
   static const String _databaseName = 'expense_tracker.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 2;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -74,8 +74,9 @@ class DatabaseHelper {
         user_name TEXT NOT NULL,
         shake_enabled INTEGER NOT NULL DEFAULT 1,
         background_shake_enabled INTEGER NOT NULL DEFAULT 0,
-        shake_sensitivity REAL NOT NULL DEFAULT 15.0,
-        shake_cooldown INTEGER NOT NULL DEFAULT 2000,
+        shake_sensitivity REAL NOT NULL DEFAULT 3.0,
+        shake_sensitivity_level TEXT NOT NULL DEFAULT 'medium',
+        shake_cooldown INTEGER NOT NULL DEFAULT 2500,
         currency TEXT NOT NULL DEFAULT 'INR',
         currency_symbol TEXT NOT NULL DEFAULT '₹',
         theme TEXT NOT NULL DEFAULT 'system',
@@ -97,7 +98,11 @@ class DatabaseHelper {
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Future migrations handled cleanly here
+    if (oldVersion < 2) {
+      try {
+        await db.execute("ALTER TABLE user_settings ADD COLUMN shake_sensitivity_level TEXT NOT NULL DEFAULT 'medium'");
+      } catch (_) {}
+    }
   }
 
   // ================= EXPENSE OPERATIONS ================= //
@@ -361,6 +366,9 @@ class DatabaseHelper {
     final db = await database;
     try {
       await db.execute('ALTER TABLE user_settings ADD COLUMN background_shake_enabled INTEGER NOT NULL DEFAULT 0');
+    } catch (_) {}
+    try {
+      await db.execute("ALTER TABLE user_settings ADD COLUMN shake_sensitivity_level TEXT NOT NULL DEFAULT 'medium'");
     } catch (_) {}
     final List<Map<String, dynamic>> maps = await db.query(
       'user_settings',

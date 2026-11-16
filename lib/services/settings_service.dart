@@ -27,6 +27,7 @@ class SettingsService {
     final userName = prefs.getString(AppConstants.keyUserName) ?? dbSettings.userName;
     final shakeEnabled = prefs.getBool(AppConstants.keyShakeEnabled) ?? dbSettings.shakeEnabled;
     final backgroundShakeEnabled = prefs.getBool(AppConstants.keyBackgroundShakeEnabled) ?? dbSettings.backgroundShakeEnabled;
+    final shakeSensitivityLevel = prefs.getString(AppConstants.keyShakeSensitivityLevel) ?? dbSettings.shakeSensitivityLevel;
     final shakeSensitivity = prefs.getDouble(AppConstants.keyShakeSensitivity) ?? dbSettings.shakeSensitivity;
     final shakeCooldown = prefs.getInt(AppConstants.keyShakeCooldown) ?? dbSettings.shakeCooldown;
     final currency = prefs.getString(AppConstants.keyCurrency) ?? dbSettings.currency;
@@ -39,6 +40,7 @@ class SettingsService {
       shakeEnabled: shakeEnabled,
       backgroundShakeEnabled: backgroundShakeEnabled,
       shakeSensitivity: shakeSensitivity,
+      shakeSensitivityLevel: shakeSensitivityLevel,
       shakeCooldown: shakeCooldown,
       currency: currency,
       currencySymbol: currencySymbol,
@@ -54,6 +56,7 @@ class SettingsService {
     await prefs.setString(AppConstants.keyUserName, settings.userName);
     await prefs.setBool(AppConstants.keyShakeEnabled, settings.shakeEnabled);
     await prefs.setBool(AppConstants.keyBackgroundShakeEnabled, settings.backgroundShakeEnabled);
+    await prefs.setString(AppConstants.keyShakeSensitivityLevel, settings.shakeSensitivityLevel);
     await prefs.setDouble(AppConstants.keyShakeSensitivity, settings.shakeSensitivity);
     await prefs.setInt(AppConstants.keyShakeCooldown, settings.shakeCooldown);
     await prefs.setString(AppConstants.keyCurrency, settings.currency);

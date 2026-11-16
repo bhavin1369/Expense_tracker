@@ -10,8 +10,20 @@ class AppConstants {
   static const String defaultUserName = 'User';
   static const String defaultCurrency = 'INR';
   static const String defaultCurrencySymbol = '₹';
-  static const double defaultShakeSensitivity = 15.0; // m/s^2 threshold
-  static const int defaultShakeCooldown = 2000; // ms
+
+  // Shake Detection Algorithm Constants (Multi-Peak Linear Acceleration)
+  static const String defaultShakeSensitivityLevel = 'medium';
+  static const double shakeThresholdLow = 4.2; // m/s^2 linear acceleration (Strong deliberate shake)
+  static const double shakeThresholdMedium = 3.0; // m/s^2 linear acceleration (Balanced, Default)
+  static const double shakeThresholdHigh = 2.4; // m/s^2 linear acceleration (Lighter shake)
+  static const double defaultShakeSensitivity = shakeThresholdMedium; // 3.0 m/s^2
+  static const int defaultShakeCooldown = 2500; // ms (2.5s cooldown after successful shake)
+  static const int minShakePeaks = 4; // At least 4 distinct alternating peaks required
+  static const int maxShakeWindowMs = 1500; // 1.5s maximum detection window
+  static const int minTimeBetweenPeaksMs = 100; // 100ms minimum interval to filter noise
+  static const int maxTimeBetweenPeaksMs = 500; // 500ms maximum interval between peaks
+  static const double shakeValleyRatio = 0.55; // Magnitude must drop below threshold * 0.55 before next peak
+
   static const String defaultTheme = 'system';
 
   // Storage Keys
@@ -19,7 +31,9 @@ class AppConstants {
   static const String keyShakeEnabled = 'shake_enabled';
   static const String keyBackgroundShakeEnabled = 'background_shake_enabled';
   static const String keyShakeSensitivity = 'shake_sensitivity';
+  static const String keyShakeSensitivityLevel = 'shake_sensitivity_level';
   static const String keyShakeCooldown = 'shake_cooldown';
+  static const String keyShakeDebugLogsEnabled = 'shake_debug_logs_enabled';
   static const String keyCurrency = 'currency';
   static const String keyCurrencySymbol = 'currency_symbol';
   static const String keyTheme = 'theme';

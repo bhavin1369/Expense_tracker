@@ -9,21 +9,37 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.*
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import kotlin.math.abs
 import kotlin.math.sqrt
 
 class ShakeForegroundService : Service(), SensorEventListener {
 
     private var sensorManager: SensorManager? = null
-    private var accelerometer: Sensor? = null
-    private var lastShakeTimestamp: Long = 0
-    private var firstPeakTimestamp: Long = 0
-    private var peakCount: Int = 0
+    private var activeSensor: Sensor? = null
+    private var isUsingLinearAcceleration: Boolean = false
 
-    private var sensitivity: Float = 14.0f
-    private var cooldownMs: Long = 2000L
+    // Gravity filter fallback when TYPE_LINEAR_ACCELERATION is not available
+    private val gravity = FloatArray(3) { 0f }
+    private var hasGravityInitialized = false
+
+    // Detection state machine variables
+    private var peakCount: Int = 0
+    private var firstPeakTimestamp: Long = 0L
+    private var lastPeakTimestamp: Long = 0L
+    private var lastTriggerTimestamp: Long = 0L
+    private var waitingForValley: Boolean = false
+    private var lastPeakAxis: Int = 0 // 0: X, 1: Y, 2: Z
+    private var lastPeakSign: Float = 1.0f
+
+    // Configurable parameters
+    private var sensitivity: Float = DEFAULT_SENSITIVITY
+    private var cooldownMs: Long = DEFAULT_COOLDOWN_MS
 
     companion object {
+        private const val TAG = "ShakeService"
+
         const val CHANNEL_SERVICE_ID = "shake_service_persistent_channel"
         const val CHANNEL_ALERT_ID = "shake_alert_heads_up_channel"
         const val NOTIFICATION_SERVICE_ID = 1001
@@ -31,6 +47,8 @@ class ShakeForegroundService : Service(), SensorEventListener {
 
         const val ACTION_START = "ACTION_START_SHAKE_SERVICE"
         const val ACTION_STOP = "ACTION_STOP_SHAKE_SERVICE"
+        const val ACTION_UPDATE_CONFIG = "ACTION_UPDATE_SHAKE_CONFIG"
+
         const val EXTRA_SENSITIVITY = "EXTRA_SENSITIVITY"
         const val EXTRA_COOLDOWN = "EXTRA_COOLDOWN"
         const val EXTRA_OPEN_SHAKE_EXPENSE = "OPEN_SHAKE_EXPENSE"
@@ -40,15 +58,46 @@ class ShakeForegroundService : Service(), SensorEventListener {
         const val KEY_SENSITIVITY = "saved_sensitivity"
         const val KEY_COOLDOWN = "saved_cooldown"
 
+        // Detection constants
+        const val DEFAULT_SENSITIVITY = 3.0f // m/s^2 linear acceleration (Medium default)
+        const val DEFAULT_COOLDOWN_MS = 2500L
+        const val MIN_PEAKS = 4 // Require at least 4 distinct alternating peaks
+        const val MAX_WINDOW_MS = 1500L // 1.5s total window
+        const val MIN_TIME_BETWEEN_PEAKS_MS = 100L // Filter out high-frequency vibrations
+        const val MAX_TIME_BETWEEN_PEAKS_MS = 500L // Maximum time between consecutive peaks
+        const val VALLEY_RATIO = 0.55f // Must drop below threshold * 0.55 or reverse direction
+
         var isRunning: Boolean = false
             private set
+
+        private var activeServiceInstance: ShakeForegroundService? = null
+
+        fun updateRunningConfig(newSensitivity: Float, newCooldown: Long) {
+            activeServiceInstance?.let { service ->
+                service.sensitivity = if (newSensitivity > 6.0f) DEFAULT_SENSITIVITY else newSensitivity
+                service.cooldownMs = newCooldown
+                Log.d(TAG, "Updated running service config: sensitivity=${service.sensitivity}, cooldown=${service.cooldownMs}")
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
+        activeServiceInstance = this
         createNotificationChannels()
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+        // Prefer TYPE_LINEAR_ACCELERATION (hardware sensor fusion with gravity removed in 3D)
+        val linearSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
+        if (linearSensor != null) {
+            activeSensor = linearSensor
+            isUsingLinearAcceleration = true
+            Log.d(TAG, "Initialized with Sensor.TYPE_LINEAR_ACCELERATION")
+        } else {
+            activeSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+            isUsingLinearAcceleration = false
+            Log.d(TAG, "Initialized with fallback Sensor.TYPE_ACCELEROMETER + 3D LPF")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -57,12 +106,24 @@ class ShakeForegroundService : Service(), SensorEventListener {
             return START_NOT_STICKY
         }
 
-        // Read sensitivity & cooldown from intent or SharedPreferences
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        sensitivity = intent?.getFloatExtra(EXTRA_SENSITIVITY, prefs.getFloat(KEY_SENSITIVITY, 14.0f)) ?: 14.0f
-        cooldownMs = intent?.getLongExtra(EXTRA_COOLDOWN, prefs.getLong(KEY_COOLDOWN, 2000L)) ?: 2000L
+        val rawSavedSens = prefs.getFloat(KEY_SENSITIVITY, DEFAULT_SENSITIVITY)
+        // Migrate legacy raw accelerometer threshold (>6.0) to linear threshold
+        val initialSens = if (rawSavedSens > 6.0f) DEFAULT_SENSITIVITY else rawSavedSens
 
-        // Save state so BootReceiver can check on reboot
+        val requestedSens = intent?.getFloatExtra(EXTRA_SENSITIVITY, initialSens) ?: initialSens
+        sensitivity = if (requestedSens > 6.0f) DEFAULT_SENSITIVITY else requestedSens
+        cooldownMs = intent?.getLongExtra(EXTRA_COOLDOWN, prefs.getLong(KEY_COOLDOWN, DEFAULT_COOLDOWN_MS)) ?: DEFAULT_COOLDOWN_MS
+
+        if (intent?.action == ACTION_UPDATE_CONFIG) {
+            Log.d(TAG, "Received ACTION_UPDATE_CONFIG: sensitivity=$sensitivity, cooldown=$cooldownMs")
+            prefs.edit()
+                .putFloat(KEY_SENSITIVITY, sensitivity)
+                .putLong(KEY_COOLDOWN, cooldownMs)
+                .apply()
+            return START_STICKY
+        }
+
         prefs.edit()
             .putBoolean(KEY_SERVICE_ENABLED, true)
             .putFloat(KEY_SENSITIVITY, sensitivity)
@@ -102,8 +163,8 @@ class ShakeForegroundService : Service(), SensorEventListener {
     }
 
     private fun registerSensorListener() {
-        accelerometer?.let {
-            sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_UI)
+        activeSensor?.let {
+            sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
         }
     }
 
@@ -112,29 +173,105 @@ class ShakeForegroundService : Service(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+        if (event == null || activeSensor == null) return
 
-        val x = event.values[0]
-        val y = event.values[1]
-        val z = event.values[2]
+        var linX: Float
+        var linY: Float
+        var linZ: Float
 
-        val totalAcceleration = sqrt((x * x + y * y + z * z).toDouble()).toFloat()
-        val netAcceleration = Math.abs(totalAcceleration - SensorManager.GRAVITY_EARTH)
-
-        if (netAcceleration > sensitivity) {
-            val now = System.currentTimeMillis()
-
-            if (now - firstPeakTimestamp > 400) {
-                peakCount = 1
-                firstPeakTimestamp = now
+        if (isUsingLinearAcceleration) {
+            linX = event.values[0]
+            linY = event.values[1]
+            linZ = event.values[2]
+        } else {
+            // Apply 3D low-pass filter to extract gravity, then subtract
+            val alpha = 0.8f
+            if (!hasGravityInitialized) {
+                gravity[0] = event.values[0]
+                gravity[1] = event.values[1]
+                gravity[2] = event.values[2]
+                hasGravityInitialized = true
             } else {
-                peakCount++
+                gravity[0] = alpha * gravity[0] + (1 - alpha) * event.values[0]
+                gravity[1] = alpha * gravity[1] + (1 - alpha) * event.values[1]
+                gravity[2] = alpha * gravity[2] + (1 - alpha) * event.values[2]
             }
+            linX = event.values[0] - gravity[0]
+            linY = event.values[1] - gravity[1]
+            linZ = event.values[2] - gravity[2]
+        }
 
-            if (peakCount >= 2 || netAcceleration > (sensitivity * 1.35f)) {
-                if (now - lastShakeTimestamp > cooldownMs) {
-                    lastShakeTimestamp = now
+        val magnitude = sqrt((linX * linX + linY * linY + linZ * linZ).toDouble()).toFloat()
+        val now = System.currentTimeMillis()
+
+        // 1. Check Cooldown
+        if (now - lastTriggerTimestamp < cooldownMs) {
+            return
+        }
+
+        // 2. Window and Inter-Peak Timeout Validation
+        if (peakCount > 0) {
+            val elapsedSinceFirst = now - firstPeakTimestamp
+            val elapsedSinceLast = now - lastPeakTimestamp
+
+            if (elapsedSinceFirst > MAX_WINDOW_MS || elapsedSinceLast > MAX_TIME_BETWEEN_PEAKS_MS) {
+                // Shake rhythm broken or timed out -> reset to prevent single spikes from accumulating
+                peakCount = 0
+                waitingForValley = false
+            }
+        }
+
+        // 3. Valley / Hysteresis and Direction Reversal Validation
+        val valleyThreshold = sensitivity * VALLEY_RATIO
+        if (waitingForValley) {
+            if (magnitude < valleyThreshold) {
+                waitingForValley = false
+            } else {
+                // Check if dominant axis reversed direction significantly
+                val dominantVal = when (lastPeakAxis) {
+                    0 -> linX
+                    1 -> linY
+                    else -> linZ
+                }
+                if ((dominantVal * lastPeakSign) < -valleyThreshold) {
+                    waitingForValley = false
+                }
+            }
+        }
+
+        // 4. Peak Detection and Pattern Validation
+        if (!waitingForValley && magnitude >= sensitivity) {
+            val timeSinceLast = if (peakCount == 0) 999999L else (now - lastPeakTimestamp)
+
+            if (timeSinceLast >= MIN_TIME_BETWEEN_PEAKS_MS) {
+                val absX = abs(linX)
+                val absY = abs(linY)
+                val absZ = abs(linZ)
+                var domAxis = 0
+                var domVal = linX
+                if (absY > absX && absY > absZ) {
+                    domAxis = 1
+                    domVal = linY
+                } else if (absZ > absX && absZ > absY) {
+                    domAxis = 2
+                    domVal = linZ
+                }
+
+                peakCount++
+                lastPeakTimestamp = now
+                waitingForValley = true
+                lastPeakAxis = domAxis
+                lastPeakSign = if (domVal >= 0) 1.0f else -1.0f
+
+                if (peakCount == 1) {
+                    firstPeakTimestamp = now
+                }
+
+                // 5. Require at least 4 distinct valid peaks
+                if (peakCount >= MIN_PEAKS) {
+                    lastTriggerTimestamp = now
                     peakCount = 0
+                    waitingForValley = false
                     handleShakeDetected()
                 }
             }
@@ -144,6 +281,13 @@ class ShakeForegroundService : Service(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun handleShakeDetected() {
+        // COORDINATION: If Flutter app is active in foreground, let Flutter handle it!
+        // This prevents duplicate triggers and prevents native overlay over the app itself.
+        if (MainActivity.isAppInForeground) {
+            Log.d(TAG, "Shake detected but Flutter app is in foreground. Skipping native overlay.")
+            return
+        }
+
         vibratePhone()
 
         val canDrawOverlay = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -158,10 +302,7 @@ class ShakeForegroundService : Service(), SensorEventListener {
                 FloatingExpenseOverlay.show(this)
             }
         } else {
-            // 1. Notify Flutter if alive
-            MainActivity.notifyShakeFromBackground()
-
-            // 2. Alert user that overlay permission is required
+            // Alert user that overlay permission is required
             postOverlayPermissionAlertNotification()
         }
     }
@@ -224,7 +365,6 @@ class ShakeForegroundService : Service(), SensorEventListener {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
-            // Channel 1: Persistent Service Notification
             val serviceChannel = NotificationChannel(
                 CHANNEL_SERVICE_ID,
                 "Shake Detection Service",
@@ -234,7 +374,6 @@ class ShakeForegroundService : Service(), SensorEventListener {
                 setShowBadge(false)
             }
 
-            // Channel 2: High Priority Heads-up Shake Alert Notification
             val alertChannel = NotificationChannel(
                 CHANNEL_ALERT_ID,
                 "Shake Detection Alerts",
@@ -269,6 +408,7 @@ class ShakeForegroundService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         isRunning = false
+        activeServiceInstance = null
         unregisterSensorListener()
         FloatingExpenseOverlay.dismiss()
         super.onDestroy()

@@ -1,13 +1,18 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:excel/excel.dart';
 import 'package:expense_tracker/models/category_model.dart';
 import 'package:expense_tracker/models/expense_model.dart';
 import 'package:expense_tracker/models/user_settings_model.dart';
 import 'package:expense_tracker/utils/currency_formatter.dart';
+import 'package:expense_tracker/utils/constants.dart';
 import 'package:expense_tracker/utils/date_utils.dart';
 import 'package:expense_tracker/utils/icon_helper.dart';
+import 'package:expense_tracker/services/shake_detection_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('CategoryModel Tests', () {
     test('Default 27 categories are correctly defined', () {
       final categories = CategoryModel.defaultCategories;
@@ -107,8 +112,9 @@ void main() {
         userName: 'Bhavin',
         shakeEnabled: true,
         backgroundShakeEnabled: true,
-        shakeSensitivity: 15.0,
-        shakeCooldown: 2000,
+        shakeSensitivity: 3.0,
+        shakeSensitivityLevel: 'medium',
+        shakeCooldown: 2500,
         currency: 'INR',
         currencySymbol: '₹',
         theme: 'system',
@@ -118,8 +124,9 @@ void main() {
       expect(map['user_name'], 'Bhavin');
       expect(map['shake_enabled'], 1);
       expect(map['background_shake_enabled'], 1);
-      expect(map['shake_sensitivity'], 15.0);
-      expect(map['shake_cooldown'], 2000);
+      expect(map['shake_sensitivity'], 3.0);
+      expect(map['shake_sensitivity_level'], 'medium');
+      expect(map['shake_cooldown'], 2500);
       expect(map['currency'], 'INR');
       expect(map['currency_symbol'], '₹');
 
@@ -127,7 +134,28 @@ void main() {
       expect(reconstructed.userName, 'Bhavin');
       expect(reconstructed.shakeEnabled, true);
       expect(reconstructed.backgroundShakeEnabled, true);
-      expect(reconstructed.shakeSensitivity, 15.0);
+      expect(reconstructed.shakeSensitivity, 3.0);
+      expect(reconstructed.shakeSensitivityLevel, 'medium');
+    });
+
+    test('User Settings sensitivity levels resolve correctly', () {
+      final high = UserSettingsModel(shakeSensitivityLevel: 'high');
+      expect(high.shakeSensitivity, AppConstants.shakeThresholdHigh);
+      expect(high.shakeSensitivityLevel, 'high');
+
+      final low = UserSettingsModel(shakeSensitivityLevel: 'low');
+      expect(low.shakeSensitivity, AppConstants.shakeThresholdLow);
+      expect(low.shakeSensitivityLevel, 'low');
+
+      final medium = UserSettingsModel(shakeSensitivityLevel: 'medium');
+      expect(medium.shakeSensitivity, AppConstants.shakeThresholdMedium);
+      expect(medium.shakeSensitivityLevel, 'medium');
+    });
+
+    test('Legacy raw accelerometer sensitivity (>6.0) automatically migrates to medium linear', () {
+      final legacy = UserSettingsModel(shakeSensitivity: 15.0);
+      expect(legacy.shakeSensitivity, 3.0);
+      expect(legacy.shakeSensitivityLevel, 'medium');
     });
   });
 
@@ -217,6 +245,63 @@ void main() {
         readSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value.toString(),
         'TXN-20261116-0001',
       );
+    });
+  });
+
+  group('ShakeDetectionService Tests', () {
+    setUpAll(() {
+      const MethodChannel sensorMethodChannel = MethodChannel('dev.fluttercommunity.plus/sensors/method');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+        sensorMethodChannel,
+        (call) async => null,
+      );
+    });
+
+    test('ShakeDetectionService configuration and debugNotifier', () {
+      final service = ShakeDetectionService.instance;
+      service.configure(
+        enabled: true,
+        sensitivity: 3.0,
+        cooldown: 2500,
+        level: 'medium',
+      );
+
+      expect(service.isEnabled, isTrue);
+      expect(service.threshold, 3.0);
+      expect(service.cooldownMs, 2500);
+      expect(service.sensitivityLevel, 'medium');
+
+      final debugInfo = service.debugNotifier.value;
+      expect(debugInfo.threshold, 3.0);
+      expect(debugInfo.sensitivityLevel, 'medium');
+      expect(debugInfo.requiredPeaks, 4);
+    });
+
+    test('ShakeDetectionService simulateShake triggers registered callback', () {
+      final service = ShakeDetectionService.instance;
+      bool callbackFired = false;
+
+      service.registerCallback(() {
+        callbackFired = true;
+      });
+
+      service.simulateShake();
+      expect(callbackFired, isTrue);
+
+      service.unregisterCallback();
+    });
+
+    test('ShakeDetectionService resetDebugCounters clears rejected counts', () {
+      final service = ShakeDetectionService.instance;
+      service.resetDebugCounters();
+
+      final info = service.debugNotifier.value;
+      expect(info.rejectedSingleSpikes, 0);
+      expect(info.rejectedTimeouts, 0);
+      expect(info.rejectedTooFast, 0);
+      expect(info.rejectedCooldowns, 0);
+      expect(info.peakCount, 0);
+      expect(info.state, 'IDLE');
     });
   });
 }

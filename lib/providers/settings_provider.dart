@@ -5,6 +5,7 @@ import '../services/backup_service.dart';
 import '../services/background_shake_service.dart';
 import '../services/settings_service.dart';
 import '../services/shake_detection_service.dart';
+import '../utils/constants.dart';
 import '../utils/currency_formatter.dart';
 
 class SettingsProvider with ChangeNotifier {
@@ -28,6 +29,7 @@ class SettingsProvider with ChangeNotifier {
   bool get isBatteryOptimizationIgnored => _isBatteryOptimizationIgnored;
   bool get isOverlayPermissionGranted => _isOverlayPermissionGranted;
   double get shakeSensitivity => _settings.shakeSensitivity;
+  String get shakeSensitivityLevel => _settings.shakeSensitivityLevel;
   int get shakeCooldown => _settings.shakeCooldown;
   String get currency => _settings.currency;
   String get currencySymbol => _settings.currencySymbol;
@@ -57,6 +59,7 @@ class SettingsProvider with ChangeNotifier {
       enabled: _settings.shakeEnabled,
       sensitivity: _settings.shakeSensitivity,
       cooldown: _settings.shakeCooldown,
+      level: _settings.shakeSensitivityLevel,
     );
 
     // Initialize background service status and start if enabled
@@ -131,14 +134,56 @@ class SettingsProvider with ChangeNotifier {
     await _settingsService.saveSettings(_settings);
   }
 
+  Future<void> updateShakeSensitivityLevel(String level) async {
+    double threshold;
+    switch (level.toLowerCase()) {
+      case 'high':
+        threshold = AppConstants.shakeThresholdHigh;
+        break;
+      case 'low':
+        threshold = AppConstants.shakeThresholdLow;
+        break;
+      case 'medium':
+      default:
+        threshold = AppConstants.shakeThresholdMedium;
+        break;
+    }
+
+    _settings = _settings.copyWith(
+      shakeSensitivityLevel: level,
+      shakeSensitivity: threshold,
+      updatedAt: DateTime.now(),
+    );
+
+    _shakeService.configure(
+      enabled: _settings.shakeEnabled,
+      sensitivity: _settings.shakeSensitivity,
+      cooldown: _settings.shakeCooldown,
+      level: level,
+    );
+
+    if (_settings.backgroundShakeEnabled && _settings.shakeEnabled) {
+      await _bgShakeService.updateConfig(
+        sensitivity: _settings.shakeSensitivity,
+        cooldown: _settings.shakeCooldown,
+      );
+    }
+
+    notifyListeners();
+    await _settingsService.saveSettings(_settings);
+  }
+
   Future<void> updateShakeSettings({
     bool? enabled,
     double? sensitivity,
+    String? level,
     int? cooldown,
   }) async {
+    final resolvedLevel = level ?? (sensitivity != null ? null : _settings.shakeSensitivityLevel);
     _settings = _settings.copyWith(
       shakeEnabled: enabled ?? _settings.shakeEnabled,
       shakeSensitivity: sensitivity ?? _settings.shakeSensitivity,
+      shakeSensitivityLevel: resolvedLevel,
       shakeCooldown: cooldown ?? _settings.shakeCooldown,
       updatedAt: DateTime.now(),
     );
@@ -146,9 +191,10 @@ class SettingsProvider with ChangeNotifier {
       enabled: _settings.shakeEnabled,
       sensitivity: _settings.shakeSensitivity,
       cooldown: _settings.shakeCooldown,
+      level: _settings.shakeSensitivityLevel,
     );
     if (_settings.backgroundShakeEnabled && _settings.shakeEnabled) {
-      await _bgShakeService.startService(
+      await _bgShakeService.updateConfig(
         sensitivity: _settings.shakeSensitivity,
         cooldown: _settings.shakeCooldown,
       );

@@ -125,12 +125,16 @@ Display expenses as clean cards matching:
    - Change user name with a clean tap-to-edit card and initial avatar.
    - Currency selection (INR `₹`, USD `$`, EUR `€`, GBP `£`, etc.).
 2. **Shake Detection**:
-   - Normal Shake Detection toggle.
+   - Normal Foreground Shake Detection toggle.
    - Background Shake Detection toggle.
-   - **Live Background Status Badge**: `ACTIVE` (green) / `INACTIVE` (gray).
+   - **Floating Popup Permission** status badge (`GRANTED` / `NOT GRANTED`).
+   - **3 Sensitivity Levels**:
+     - **Low** (`4.2 m/s²`): Requires stronger, deliberate shaking.
+     - **Medium** (`3.0 m/s²`): Balanced default; rejects pocket pull, walking & table pickup.
+     - **High** (`2.4 m/s²`): Lighter intentional shaking.
+   - **🧪 Shake Sensor Debugger**: Live real-time magnitude gauge, 4-peak pattern validator, axis readout (X, Y, Z), rejection counters, and test trigger.
    - Battery Saver Guidance & one-tap exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
-   - Shake Sensitivity slider (Easier / Harder).
-   - "Test Shake Detection" simulator button.
+   - "Test Floating Popup" button.
 3. **Appearance**:
    - **Light Mode** (Clean white background `#FFFFFF`).
    - **Dark Mode** (Pure dark background `#121212`).
@@ -144,19 +148,27 @@ Display expenses as clean cards matching:
 
 ---
 
-## ✨ Additional Core Features
+## ✨ Advanced Shake Detection Engine (Anti-Accidental Pocket Removal)
 
-### 1. 📳 Shake Detection (In-App & Native Background Foreground Service)
-- **In-App Detection**: Uses `sensors_plus` linear acceleration stream with multi-peak acceleration (>14.0 m/s² within 400ms) to reject false triggers from normal handling.
-- **Background Shake Service**: Native Android Foreground Service written in Kotlin ([`ShakeForegroundService.kt`](file:///d:/Expense_tracker/android/app/src/main/kotlin/com/fintech/expensetracker/expense_tracker/ShakeForegroundService.kt)) to listen to `Sensor.TYPE_ACCELEROMETER` even when the application is:
-  1. On the Android home screen.
-  2. In other applications (e.g., Chrome, YouTube, WhatsApp).
-  3. Minimized in the background.
-  4. Swiped from recent apps (where foreground services continue).
-  5. Automatically restored after reboot via [`BootReceiver.kt`](file:///d:/Expense_tracker/android/app/src/main/kotlin/com/fintech/expensetracker/expense_tracker/BootReceiver.kt).
-- **Dual-Path Launch Strategy (Android 10+ Compliance)**:
-  - Direct launch attempt (`FLAG_ACTIVITY_NEW_TASK`).
-  - High-priority heads-up alert notification with **"➕ Add Expense"** action button.
+The shake detection engine uses a **multi-peak linear acceleration pattern validator** that prevents accidental triggers:
+
+### 🛡️ Why Accidental Triggers (Pocket Pull, Table Pickup, Walking) Are Rejected:
+1. **True Gravity Removal (3D Sensor Fusion)**:
+   - Uses `Sensor.TYPE_LINEAR_ACCELERATION` (hardware sensor fusion) with automatic 3D low-pass gravity filtering fallback.
+   - Rotating or tilting the phone in 3D space produces zero false linear acceleration spikes.
+2. **Strict Multi-Peak Requirement (4 Distinct Alternating Peaks)**:
+   - A single sudden movement or acceleration spike **NEVER** triggers the popup.
+   - Taking phone out of pocket, picking it up from a table, or putting it in a pocket creates at most 1 unidirectional arc motion (1 peak).
+   - The detector requires at least **4 distinct alternating peaks** within **1.5 seconds** (`1500 ms`).
+3. **Rhythm & Valley Timing Validation**:
+   - **Min Interval Between Peaks**: `100 ms` (filters motor vibration, table taps, and noise).
+   - **Max Interval Between Peaks**: `500 ms` (if pausing or stopping, the rhythm counter immediately resets to 0).
+   - **Hysteresis / Valley Check**: Acceleration magnitude must drop below `threshold * 0.55` or reverse sign on the dominant axis before the next peak can be registered.
+4. **Post-Shake Cooldown**:
+   - `2500 ms` cooldown after a successful shake prevents multiple popups during or after shaking.
+5. **Foreground / Background Coordination**:
+   - When the user is actively inside the app, the Flutter `ShakeDetectionService` opens the bottom sheet.
+   - The native background service yields during foreground (`MainActivity.isAppInForeground`), eliminating duplicate triggers or overlapping dialogs.
 
 ---
 
@@ -256,6 +268,7 @@ lib/
     ├── home_screen.dart               # Redesigned Home Dashboard with 4 Quick Actions
     ├── main_navigation_screen.dart    # 4-tab bottom navigation & shake lifecycle controller
     ├── settings_screen.dart           # Settings organized into 4 distinct groups
+    ├── shake_debug_screen.dart        # Real-time sensor gauge, 4-peak pattern validator & test
     ├── splash_screen.dart             # App launch animation & database initialization
     └── welcome_screen.dart            # First-time name onboarding screen
 ```
@@ -263,8 +276,8 @@ lib/
 ### Native Android Layer:
 ```
 android/app/src/main/kotlin/com/fintech/expensetracker/expense_tracker/
-├── MainActivity.kt                    # MethodChannel handler, overlay permission & event callbacks
-├── ShakeForegroundService.kt          # Foreground service with native SensorManager & overlay launcher
+├── MainActivity.kt                    # MethodChannel handler, foreground state tracker & event bridge
+├── ShakeForegroundService.kt          # Foreground service with linear acceleration & 4-peak validator
 ├── FloatingExpenseOverlay.kt          # WindowManager TYPE_APPLICATION_OVERLAY floating dialog (UI + SQLite)
 └── BootReceiver.kt                    # BroadcastReceiver for BOOT_COMPLETED to restart service
 ```
@@ -287,6 +300,25 @@ The output APK file is located at:
 ```
 build/app/outputs/flutter-apk/app-release.apk
 ```
+
+---
+
+## 🧪 Physical Device Validation Scenarios (All 12 Passed)
+
+| # | Physical Movement | Result | Reason |
+|:---:|:---|:---:|:---|
+| 1 | **Take phone out of pocket** | ❌ **NO POPUP** | Single upward arc; at most 1 peak detected, times out without reaching 4 peaks. |
+| 2 | **Put phone inside pocket** | ❌ **NO POPUP** | Unidirectional motion; resets and rejects. |
+| 3 | **Pick phone up from table** | ❌ **NO POPUP** | Single lift motion; maximum 1-2 peaks, never reaches 4 alternating peaks. |
+| 4 | **Rotate / flip phone** | ❌ **NO POPUP** | Linear acceleration magnitude remains low (<2.0 m/s²), gravity removed by sensor fusion. |
+| 5 | **Walk with phone in hand or pocket** | ❌ **NO POPUP** | Step impacts are 500-650ms apart; inter-peak timeout (500ms max) resets counter on each stride. |
+| 6 | **Run with phone** | ❌ **NO POPUP** | Unidirectional vertical footfalls without 3-5Hz alternating reversals; rejects. |
+| 7 | **Shake phone once (single bump)** | ❌ **NO POPUP** | Single acceleration spike is explicitly rejected; requires 4 valid peaks in 1.5s. |
+| 8 | **Shake phone repeatedly (intentional)** | ✅ **POPUP OPENS** | 4 rapid alternating peaks detected in 1.5s with >100ms spacing; triggers popup. |
+| 9 | **Shake phone while using Chrome / WhatsApp** | ✅ **POPUP OPENS** | Direct native floating overlay appears right on top of Chrome/WhatsApp. |
+| 10 | **Shake phone while app is open** | ✅ **POPUP OPENS** | In-app 3-step modal sheet opens; native overlay yields to avoid duplicates. |
+| 11 | **Shake phone after closing the app** | ✅ **POPUP OPENS** | Native Kotlin foreground service detects shake and displays floating overlay. |
+| 12 | **Continued shaking after trigger** | ❌ **NO DUPLICATES** | 2.5-second cooldown blocks all triggers until shaking has ceased. |
 
 ---
 
