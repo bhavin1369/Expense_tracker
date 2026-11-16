@@ -1,0 +1,269 @@
+# 📱 Shake Expense Tracker
+
+> **A Complete, Standalone, 100% Offline Android Expense Management Application built with Flutter & Dart.**  
+> Simply shake your phone to log an expense instantly — **even when the app is closed, minimized, or in another app!**  
+> Redesigned with a **clean, simple, beginner-friendly UI/UX** that anyone can understand effortlessly.
+
+---
+
+## 🌟 Overview & Core Architecture
+
+Shake Expense Tracker is an ultra-fast, offline-first personal financial manager designed for zero friction. It is designed to run independently on any Android device without requiring servers, cloud accounts, APIs, or internet connectivity.
+
+### 🚫 Strict Offline Architecture
+- **Completely Standalone & Offline**: Zero network calls, zero tracking, 100% local privacy.
+- **NO Cloud / NO Backend**: No MySQL, no Node.js, no Express.js, no Firebase, no REST APIs, no hosting services.
+- **NO Login or Registration**: Open the app, enter your name once, and start managing expenses immediately.
+- **Independent Database & Workbook**: Each installed device maintains its own isolated SQLite database, user profile, custom categories, and permanent Excel workbook.
+
+---
+
+## 🎨 Simple and Easy UI/UX Design (Redesigned Interface)
+
+The entire application has been redesigned from the ground up for a clean, beginner-friendly, and effortless experience:
+
+### A. 🏠 Home Dashboard
+- **Top**:
+  - Time-aware greeting with user name: *"Good Morning, Bhavin!"*
+  - Current formatted date: *"Monday, Nov 16, 2026"*
+  - Subtle shake test button
+- **Main Card**:
+  - **Total Expenses This Month**: Large, prominent, high-contrast currency display.
+  - **Today's Expenses**: Clean, rounded sub-badge for today's spending.
+- **Quick Actions (4 Clean Rounded Buttons)**:
+  - ➕ **Add Expense**: Opens the 3-step expense sheet.
+  - 📜 **View History**: Switches directly to the History tab.
+  - 📊 **View Analytics**: Switches directly to the Analytics tab.
+  - 📁 **Excel File**: Opens the permanent Excel workbook manager.
+- **Below**:
+  - **Recent Expenses**: Last 4–5 transactions displayed as clean cards with a "View All" link.
+  - **Simple Monthly Spending Chart**: Clean 6-month historical bar chart showing spending trends.
+
+---
+
+### B. 🧭 Bottom Navigation (4 Options Only)
+1. **Home** (`Icons.home_rounded`)
+2. **History** (`Icons.receipt_long_rounded`)
+3. **Analytics** (`Icons.bar_chart_rounded`)
+4. **Settings** (`Icons.settings_rounded`)
+
+---
+
+### C. ⚡ Simple 3-Step Expense Entry
+- **Clear Progress Indicator**: `Amount → Category → Note`
+- **Step 1: Amount**
+  - Large amount input field (`₹ 0`).
+  - Numeric keyboard.
+  - Quick amount chips (`+₹50`, `+₹100`, `+₹200`, `+₹500`, `+₹1000`).
+  - Large, prominent **Continue** button.
+- **Step 2: Category (3 Columns per Row)**
+  - Simple 3-column category grid.
+  - Attractive category icons with short, legible names.
+  - Clear selection highlight (gold border + soft tint).
+  - Search categories text field.
+  - **+ Add** custom category button.
+  - Large **Continue to Note** button.
+- **Step 3: Note & Date**
+  - Selected summary badge showing amount and category.
+  - Optional note input field with quick tags (`Lunch`, `Coffee`, `Dinner`, `Groceries`, `Fuel`, etc.).
+  - Date and time pickers.
+  - Large, high-contrast **Apply** button.
+
+---
+
+### D. 📜 Clean Transaction History
+Display expenses as clean cards matching:
+```
+[Icon]  Food & Drinks       ₹250
+        Lunch
+        Today, 1:30 PM
+
+[Icon]  Transportation      ₹100
+        Auto
+        Today, 2:15 PM
+```
+- Quick filter chips: `All`, `Today`, `This Week`, `This Month`.
+- Search by category name or note.
+- Filter by category bottom sheet.
+- Tap any transaction to **edit** or **delete** with a safe confirmation dialog.
+
+---
+
+### E. ⚙️ Simple Settings (Organized into 4 Clear Groups)
+1. **Profile**:
+   - Change user name with a clean tap-to-edit card and initial avatar.
+   - Currency selection (INR `₹`, USD `$`, EUR `€`, GBP `£`, etc.).
+2. **Shake Detection**:
+   - Normal Shake Detection toggle.
+   - Background Shake Detection toggle.
+   - **Live Background Status Badge**: `ACTIVE` (green) / `INACTIVE` (gray).
+   - Battery Saver Guidance & one-tap exemption (`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`).
+   - Shake Sensitivity slider (Easier / Harder).
+   - "Test Shake Detection" simulator button.
+3. **Appearance**:
+   - **Light Mode** (Clean white background `#FFFFFF`).
+   - **Dark Mode** (Pure dark background `#121212`).
+   - **System Default** (Matches device appearance).
+4. **Data & Storage**:
+   - **Excel File**: View, sync, and share `My_Expense_Tracker.xlsx`.
+   - **Export Backup**: Save a complete database snapshot to file.
+   - **Restore Backup**: Restore database from backup file.
+   - **Manage Categories**: Add, edit, or restore categories.
+   - **Clear All Data**: Safe reset utility with double confirmation.
+
+---
+
+## ✨ Additional Core Features
+
+### 1. 📳 Shake Detection (In-App & Native Background Foreground Service)
+- **In-App Detection**: Uses `sensors_plus` linear acceleration stream with multi-peak acceleration (>14.0 m/s² within 400ms) to reject false triggers from normal handling.
+- **Background Shake Service**: Native Android Foreground Service written in Kotlin ([`ShakeForegroundService.kt`](file:///d:/Expense_tracker/android/app/src/main/kotlin/com/fintech/expensetracker/expense_tracker/ShakeForegroundService.kt)) to listen to `Sensor.TYPE_ACCELEROMETER` even when the application is:
+  1. On the Android home screen.
+  2. In other applications (e.g., Chrome, YouTube, WhatsApp).
+  3. Minimized in the background.
+  4. Swiped from recent apps (where foreground services continue).
+  5. Automatically restored after reboot via [`BootReceiver.kt`](file:///d:/Expense_tracker/android/app/src/main/kotlin/com/fintech/expensetracker/expense_tracker/BootReceiver.kt).
+- **Dual-Path Launch Strategy (Android 10+ Compliance)**:
+  - Direct launch attempt (`FLAG_ACTIVITY_NEW_TASK`).
+  - High-priority heads-up alert notification with **"➕ Add Expense"** action button.
+
+---
+
+### 2. 📊 Permanent Excel Workbook Integration (`My_Expense_Tracker.xlsx`)
+- **Single Permanent File**: Maintains ONE permanent workbook on internal storage.
+- **Row-Level Append**: Appends each new transaction to the `Expenses` sheet without recreating the file.
+- **Column Schema**:
+  | Column | Field Name | Description |
+  |:---:|:---|:---|
+  | **A** | `Transaction ID` | Unique immutable UUID key (`TXN-YYYYMMDD-XXXX`) |
+  | **B** | `Date` | Transaction date (`YYYY-MM-DD`) |
+  | **C** | `Time` | Time recorded (`HH:mm:ss`) |
+  | **D** | `Amount` | Numerical expense value |
+  | **E** | `Category` | Selected category name |
+  | **F** | `Note` | Optional user description |
+  | **G** | `Created At` | Full ISO-8601 audit timestamp |
+- **Enterprise Formatting**: Bold headers with dark navy styling (`#1B263B`), white text, and fixed column widths.
+- **Deduplication**: Checks column A before appending to guarantee uniqueness.
+
+---
+
+### 3. 🗂️ 27 Default Categories + Unlimited Custom Categories
+1. Food & Drinks
+2. Transportation
+3. Shopping
+4. Groceries
+5. Entertainment
+6. Bills & Utilities
+7. Health & Medical
+8. Education
+9. Travel
+10. Personal Care
+11. Rent & Housing
+12. Fuel
+13. Mobile & Internet
+14. Sports & Fitness
+15. Electronics
+16. Gifts & Donations
+17. Restaurants & Cafes
+18. Subscriptions
+19. Family
+20. Pets
+21. College Expenses
+22. Hostel Expenses
+23. Office Expenses
+24. Bike Maintenance
+25. Home Maintenance
+26. Online Orders
+27. Other (Permanent fallback)
+
+---
+
+## 🏗️ Architecture & Project Structure
+
+```
+lib/
+├── main.dart                          # Application entry point & theme provider binding
+├── models/
+│   ├── category_model.dart            # Category entity & default categories definition
+│   ├── expense_model.dart             # Expense entity with SQLite mapping
+│   └── user_settings_model.dart       # User preferences entity (incl. background shake)
+├── database/
+│   └── database_helper.dart           # SQLite helper, schema, migrations & CRUD operations
+├── services/
+│   ├── background_shake_service.dart  # MethodChannel bridge to Kotlin Foreground Service
+│   ├── backup_service.dart            # JSON backup export, import & native sharing
+│   ├── excel_service.dart             # Permanent My_Expense_Tracker.xlsx manager
+│   ├── settings_service.dart          # Local settings persistence
+│   └── shake_detection_service.dart   # Accelerometer shake sensor listener (in-app)
+├── repositories/
+│   ├── category_repository.dart       # Category data access abstraction
+│   └── expense_repository.dart        # Expense data access abstraction
+├── providers/
+│   ├── category_provider.dart         # Category state management
+│   ├── expense_provider.dart          # Transaction, filter, metric & chart calculations
+│   └── settings_provider.dart         # App settings, theme & background shake controller
+├── utils/
+│   ├── app_theme.dart                 # Clean Light & Dark themes with Gold accent
+│   ├── constants.dart                 # Colors, storage keys & configuration constants
+│   ├── currency_formatter.dart        # Intl currency formatting utilities
+│   ├── date_utils.dart                # Time-based greetings & date range calculations
+│   └── icon_helper.dart               # Icon resolver & color parsing
+├── widgets/
+│   ├── add_category_dialog.dart       # Custom category creation dialog
+│   ├── amount_input.dart              # Large currency display & quick add chips
+│   ├── category_card.dart             # 3-column category grid tile with clear highlight
+│   ├── chart_widgets.dart             # Clean Monthly Bar chart & Category Pie chart
+│   ├── dashboard_summary_card.dart    # Redesigned Month Total & Today's Expenses card
+│   ├── expense_card.dart              # Clean transaction item matching Section 14 E
+│   ├── expense_details_modal.dart     # Comprehensive detail, edit & delete modal
+│   └── expense_entry_sheet.dart       # Amount → Category → Note 3-step wizard
+└── screens/
+    ├── analytics_screen.dart          # Spending analytics & rankings
+    ├── category_management_screen.dart# Category management & reassignment
+    ├── excel_management_screen.dart   # Excel workbook status, sharing & sync
+    ├── history_screen.dart            # Filterable transaction history with period chips
+    ├── home_screen.dart               # Redesigned Home Dashboard with 4 Quick Actions
+    ├── main_navigation_screen.dart    # 4-tab bottom navigation & shake lifecycle controller
+    ├── settings_screen.dart           # Settings organized into 4 distinct groups
+    ├── splash_screen.dart             # App launch animation & database initialization
+    └── welcome_screen.dart            # First-time name onboarding screen
+```
+
+### Native Android Layer:
+```
+android/app/src/main/kotlin/com/fintech/expensetracker/expense_tracker/
+├── MainActivity.kt                    # MethodChannel handler, intent dispatcher, battery intents
+├── ShakeForegroundService.kt          # Foreground service with Accelerometer listener & notification
+└── BootReceiver.kt                    # BroadcastReceiver for BOOT_COMPLETED to restart service
+```
+
+---
+
+## 🚀 Setup & Build Instructions
+
+### 1. Run Verification
+```bash
+flutter analyze
+flutter test
+```
+
+### 2. Build Release APK
+```bash
+flutter build apk --release
+```
+The output APK file is located at:
+```
+build/app/outputs/flutter-apk/app-release.apk
+```
+
+---
+
+## 📲 How to Install & Verify on Android Devices
+
+1. Transfer [`app-release.apk`](file:///d:/Expense_tracker/build/app/outputs/flutter-apk/app-release.apk) to any Android device.
+2. Tap the APK to install.
+3. Open the app and observe the clean, beginner-friendly interface:
+   - **Home**: Total Expenses This Month, Today's Expenses, 4 Quick Action buttons, Recent Expenses, and Monthly Spending chart.
+   - **Shake**: Shake your phone — the 3-step `Amount → Category → Note` bottom sheet appears immediately.
+   - **History**: Clean transaction cards with quick period chips (`All`, `Today`, `This Week`, `This Month`). Tap to edit or delete.
+   - **Settings**: 4 clean groups (`Profile`, `Shake Detection`, `Appearance`, `Data & Storage`).
