@@ -9,72 +9,94 @@ import 'package:expense_tracker/utils/constants.dart';
 import 'package:expense_tracker/utils/date_utils.dart';
 import 'package:expense_tracker/utils/icon_helper.dart';
 import 'package:expense_tracker/services/shake_detection_service.dart';
+import 'package:expense_tracker/services/excel_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('CategoryModel Tests', () {
-    test('Default 27 categories are correctly defined', () {
-      final categories = CategoryModel.defaultCategories;
-      expect(categories.length, 27);
+    test('Default 27 expense categories and 10 income categories are correctly defined', () {
+      final expenseCategories = CategoryModel.defaultExpenseCategories;
+      expect(expenseCategories.length, 27);
 
-      final categoryNames = categories.map((c) => c.categoryName).toList();
-      expect(categoryNames, contains('Food & Drinks'));
-      expect(categoryNames, contains('Transportation'));
-      expect(categoryNames, contains('Shopping'));
-      expect(categoryNames, contains('Groceries'));
-      expect(categoryNames, contains('Entertainment'));
-      expect(categoryNames, contains('Bills & Utilities'));
-      expect(categoryNames, contains('Health & Medical'));
-      expect(categoryNames, contains('Education'));
-      expect(categoryNames, contains('Travel'));
-      expect(categoryNames, contains('Personal Care'));
-      expect(categoryNames, contains('Rent & Housing'));
-      expect(categoryNames, contains('Fuel'));
-      expect(categoryNames, contains('Mobile & Internet'));
-      expect(categoryNames, contains('Sports & Fitness'));
-      expect(categoryNames, contains('Electronics'));
-      expect(categoryNames, contains('Gifts & Donations'));
-      expect(categoryNames, contains('Restaurants & Cafes'));
-      expect(categoryNames, contains('Subscriptions'));
-      expect(categoryNames, contains('Family'));
-      expect(categoryNames, contains('Pets'));
-      expect(categoryNames, contains('College Expenses'));
-      expect(categoryNames, contains('Hostel Expenses'));
-      expect(categoryNames, contains('Office Expenses'));
-      expect(categoryNames, contains('Bike Maintenance'));
-      expect(categoryNames, contains('Home Maintenance'));
-      expect(categoryNames, contains('Online Orders'));
-      expect(categoryNames, contains('Other'));
+      final incomeCategories = CategoryModel.defaultIncomeCategories;
+      expect(incomeCategories.length, 10);
+
+      final allCategories = CategoryModel.defaultCategories;
+      expect(allCategories.length, 37);
+
+      final expenseNames = expenseCategories.map((c) => c.categoryName).toList();
+      expect(expenseNames, contains('Food & Drinks'));
+      expect(expenseNames, contains('Transportation'));
+      expect(expenseNames, contains('Shopping'));
+      expect(expenseNames, contains('Groceries'));
+      expect(expenseNames, contains('Entertainment'));
+      expect(expenseNames, contains('Bills & Utilities'));
+      expect(expenseNames, contains('Health & Medical'));
+      expect(expenseNames, contains('Education'));
+      expect(expenseNames, contains('Travel'));
+      expect(expenseNames, contains('Personal Care'));
+      expect(expenseNames, contains('Rent & Housing'));
+      expect(expenseNames, contains('Fuel'));
+      expect(expenseNames, contains('Mobile & Internet'));
+      expect(expenseNames, contains('Sports & Fitness'));
+      expect(expenseNames, contains('Electronics'));
+      expect(expenseNames, contains('Gifts & Donations'));
+      expect(expenseNames, contains('Restaurants & Cafes'));
+      expect(expenseNames, contains('Subscriptions'));
+      expect(expenseNames, contains('Family'));
+      expect(expenseNames, contains('Pets'));
+      expect(expenseNames, contains('College Expenses'));
+      expect(expenseNames, contains('Hostel Expenses'));
+      expect(expenseNames, contains('Office Expenses'));
+      expect(expenseNames, contains('Bike Maintenance'));
+      expect(expenseNames, contains('Home Maintenance'));
+      expect(expenseNames, contains('Online Orders'));
+      expect(expenseNames, contains('Other'));
+
+      final incomeNames = incomeCategories.map((c) => c.categoryName).toList();
+      expect(incomeNames, contains('Salary'));
+      expect(incomeNames, contains('Business Income'));
+      expect(incomeNames, contains('Freelance'));
+      expect(incomeNames, contains('Content Creation'));
+      expect(incomeNames, contains('Investments'));
+      expect(incomeNames, contains('Interest & Dividends'));
+      expect(incomeNames, contains('Rental Income'));
+      expect(incomeNames, contains('Commission & Incentives'));
+      expect(incomeNames, contains('Pension'));
+      expect(incomeNames, contains('Other Income'));
     });
 
     test('Category serialization to and from Map', () {
       final cat = CategoryModel(
         id: 1,
-        categoryName: 'Gaming',
-        icon: 'sports_esports_rounded',
-        color: '#AB47BC',
+        categoryName: 'Freelance',
+        icon: 'laptop_rounded',
+        color: '#0D9488',
         isDefault: false,
         isActive: true,
+        categoryType: 'income',
       );
 
       final map = cat.toMap();
-      expect(map['category_name'], 'Gaming');
-      expect(map['icon'], 'sports_esports_rounded');
-      expect(map['color'], '#AB47BC');
+      expect(map['category_name'], 'Freelance');
+      expect(map['icon'], 'laptop_rounded');
+      expect(map['color'], '#0D9488');
       expect(map['is_default'], 0);
       expect(map['is_active'], 1);
+      expect(map['category_type'], 'income');
 
       final reconstructed = CategoryModel.fromMap(map);
       expect(reconstructed.id, 1);
-      expect(reconstructed.categoryName, 'Gaming');
+      expect(reconstructed.categoryName, 'Freelance');
       expect(reconstructed.isDefault, false);
       expect(reconstructed.isActive, true);
+      expect(reconstructed.categoryType, 'income');
     });
   });
 
   group('ExpenseModel Tests', () {
-    test('Expense serialization to and from Map', () {
+    test('Expense serialization to and from Map with transactionType and paymentMode', () {
       final now = DateTime(2026, 11, 16, 14, 30, 0);
       final expense = ExpenseModel(
         id: 10,
@@ -88,6 +110,11 @@ void main() {
         createdAt: now,
         updatedAt: now,
         isSyncedExcel: true,
+        transactionType: 'expense',
+        paymentMode: 'UPI',
+        currency: '₹',
+        deviceName: 'Android Test Device',
+        syncStatus: 'Synced',
       );
 
       final map = expense.toMap();
@@ -97,12 +124,39 @@ void main() {
       expect(map['category_name'], 'Food & Drinks');
       expect(map['note'], 'Team lunch at cafe');
       expect(map['is_synced_excel'], 1);
+      expect(map['transaction_type'], 'expense');
+      expect(map['payment_mode'], 'UPI');
+      expect(map['currency'], '₹');
+      expect(map['device_name'], 'Android Test Device');
+      expect(map['sync_status'], 'Synced');
 
       final reconstructed = ExpenseModel.fromMap(map);
       expect(reconstructed.id, 10);
       expect(reconstructed.transactionId, 'TXN-20261116-TEST1234');
       expect(reconstructed.amount, 350.50);
       expect(reconstructed.isSyncedExcel, true);
+      expect(reconstructed.isExpense, true);
+      expect(reconstructed.isIncome, false);
+      expect(reconstructed.paymentMode, 'UPI');
+      expect(reconstructed.currency, '₹');
+    });
+
+    test('Income transaction identification', () {
+      final income = ExpenseModel(
+        transactionId: 'INC-20261116-001',
+        amount: 50000.0,
+        categoryId: 101,
+        categoryName: 'Salary',
+        expenseDate: DateTime.now(),
+        expenseTime: '10:00:00',
+        transactionType: 'income',
+        paymentMode: 'Bank Transfer',
+      );
+
+      expect(income.isIncome, true);
+      expect(income.isExpense, false);
+      expect(income.transactionType, 'income');
+      expect(income.paymentMode, 'Bank Transfer');
     });
   });
 
@@ -154,7 +208,7 @@ void main() {
 
     test('Legacy raw accelerometer sensitivity (>6.0) automatically migrates to medium linear', () {
       final legacy = UserSettingsModel(shakeSensitivity: 15.0);
-      expect(legacy.shakeSensitivity, 3.0);
+      expect(legacy.shakeSensitivity, AppConstants.shakeThresholdMedium);
       expect(legacy.shakeSensitivityLevel, 'medium');
     });
   });
@@ -190,23 +244,28 @@ void main() {
   });
 
   group('Excel Workbook Structure Tests', () {
-    test('Generates Expenses sheet with bold headers and proper column cells', () {
+    test('Generates Transactions sheet with all 12 headers and proper columns', () {
       final excel = Excel.createExcel();
       if (excel.sheets.containsKey('Sheet1')) {
         excel.delete('Sheet1');
       }
-      final sheet = excel['Expenses'];
-      excel.setDefaultSheet('Expenses');
+      final sheet = excel[ExcelService.sheetTransactions];
+      excel.setDefaultSheet(ExcelService.sheetTransactions);
 
-      final headers = [
-        'Transaction ID',
-        'Date',
-        'Time',
-        'Amount',
-        'Category',
-        'Note',
-        'Created At',
-      ];
+      final headers = ExcelService.transactionHeaders;
+      expect(headers.length, 12);
+      expect(headers, contains('Transaction ID'));
+      expect(headers, contains('Date'));
+      expect(headers, contains('Time'));
+      expect(headers, contains('Amount'));
+      expect(headers, contains('Currency'));
+      expect(headers, contains('Category'));
+      expect(headers, contains('Remarks'));
+      expect(headers, contains('Device Name'));
+      expect(headers, contains('Transaction Type'));
+      expect(headers, contains('Created At'));
+      expect(headers, contains('Updated At'));
+      expect(headers, contains('Sync Status'));
 
       for (int i = 0; i < headers.length; i++) {
         sheet.cell(CellIndex.indexByColumnRow(columnIndex: i, rowIndex: 0)).value =
@@ -223,27 +282,41 @@ void main() {
       sheet.cell(CellIndex.indexByColumnRow(columnIndex: 3, rowIndex: 1)).value =
           DoubleCellValue(250.0);
       sheet.cell(CellIndex.indexByColumnRow(columnIndex: 4, rowIndex: 1)).value =
-          TextCellValue('Food & Drinks');
+          TextCellValue('₹');
       sheet.cell(CellIndex.indexByColumnRow(columnIndex: 5, rowIndex: 1)).value =
-          TextCellValue('Lunch');
+          TextCellValue('Food & Drinks');
       sheet.cell(CellIndex.indexByColumnRow(columnIndex: 6, rowIndex: 1)).value =
+          TextCellValue('Lunch with team');
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 7, rowIndex: 1)).value =
+          TextCellValue('Android Device');
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: 1)).value =
+          TextCellValue('Expense');
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 9, rowIndex: 1)).value =
           TextCellValue('2026-11-16T14:30:00.000');
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 10, rowIndex: 1)).value =
+          TextCellValue('2026-11-16T14:30:00.000');
+      sheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: 1)).value =
+          TextCellValue('Synced');
 
       final bytes = excel.save();
       expect(bytes, isNotNull);
 
       // Verify decode
       final decoded = Excel.decodeBytes(bytes!);
-      expect(decoded.sheets.containsKey('Expenses'), isTrue);
-      final readSheet = decoded['Expenses'];
+      expect(decoded.sheets.containsKey(ExcelService.sheetTransactions), isTrue);
+      final readSheet = decoded[ExcelService.sheetTransactions];
       expect(readSheet.maxRows, greaterThanOrEqualTo(2));
       expect(
         readSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 0)).value.toString(),
         'Transaction ID',
       );
       expect(
-        readSheet.cell(CellIndex.indexByColumnRow(columnIndex: 0, rowIndex: 1)).value.toString(),
-        'TXN-20261116-0001',
+        readSheet.cell(CellIndex.indexByColumnRow(columnIndex: 8, rowIndex: 1)).value.toString(),
+        'Expense',
+      );
+      expect(
+        readSheet.cell(CellIndex.indexByColumnRow(columnIndex: 11, rowIndex: 1)).value.toString(),
+        'Synced',
       );
     });
   });
@@ -261,18 +334,18 @@ void main() {
       final service = ShakeDetectionService.instance;
       service.configure(
         enabled: true,
-        sensitivity: 3.0,
+        sensitivity: 3.2,
         cooldown: 2500,
         level: 'medium',
       );
 
       expect(service.isEnabled, isTrue);
-      expect(service.threshold, 3.0);
+      expect(service.threshold, 3.2);
       expect(service.cooldownMs, 2500);
       expect(service.sensitivityLevel, 'medium');
 
       final debugInfo = service.debugNotifier.value;
-      expect(debugInfo.threshold, 3.0);
+      expect(debugInfo.threshold, 3.2);
       expect(debugInfo.sensitivityLevel, 'medium');
       expect(debugInfo.requiredPeaks, 4);
     });
@@ -291,7 +364,7 @@ void main() {
       service.unregisterCallback();
     });
 
-    test('ShakeDetectionService resetDebugCounters clears rejected counts', () {
+    test('ShakeDetectionService resetDebugCounters clears all rejected counts', () {
       final service = ShakeDetectionService.instance;
       service.resetDebugCounters();
 
@@ -300,6 +373,8 @@ void main() {
       expect(info.rejectedTimeouts, 0);
       expect(info.rejectedTooFast, 0);
       expect(info.rejectedCooldowns, 0);
+      expect(info.rejectedWalkingStairs, 0);
+      expect(info.rejectedSameDirection, 0);
       expect(info.peakCount, 0);
       expect(info.state, 'IDLE');
     });

@@ -16,16 +16,28 @@ import 'category_card.dart';
 
 class ExpenseEntrySheet extends StatefulWidget {
   final VoidCallback? onExpenseAdded;
+  final String initialType; // 'expense' or 'income'
 
-  const ExpenseEntrySheet({super.key, this.onExpenseAdded});
+  const ExpenseEntrySheet({
+    super.key,
+    this.onExpenseAdded,
+    this.initialType = 'expense',
+  });
 
-  static Future<void> show(BuildContext context, {VoidCallback? onExpenseAdded}) async {
+  static Future<void> show(
+    BuildContext context, {
+    VoidCallback? onExpenseAdded,
+    String initialType = 'expense',
+  }) async {
     ShakeDetectionService.instance.setSheetOpenState(true);
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => ExpenseEntrySheet(onExpenseAdded: onExpenseAdded),
+      builder: (ctx) => ExpenseEntrySheet(
+        onExpenseAdded: onExpenseAdded,
+        initialType: initialType,
+      ),
     );
     ShakeDetectionService.instance.setSheetOpenState(false);
   }
@@ -35,7 +47,8 @@ class ExpenseEntrySheet extends StatefulWidget {
 }
 
 class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
-  int _currentStep = 1; // 1: Amount, 2: Category, 3: Note
+  int _currentStep = 1; // 1: Amount, 2: Category, 3: Remarks & Mode
+  late String _transactionType; // 'expense' or 'income'
 
   // Step 1: Amount
   final TextEditingController _amountController = TextEditingController();
@@ -46,12 +59,19 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
   final TextEditingController _categorySearchController = TextEditingController();
   String _categorySearchQuery = '';
 
-  // Step 3: Note & Date
+  // Step 3: Remarks, Payment Mode, Date & Time
   final TextEditingController _noteController = TextEditingController();
+  String _selectedPaymentMode = 'UPI';
   DateTime _selectedDate = DateTime.now();
   TimeOfDay _selectedTime = TimeOfDay.now();
 
   bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _transactionType = widget.initialType;
+  }
 
   @override
   void dispose() {
@@ -60,6 +80,8 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
     _noteController.dispose();
     super.dispose();
   }
+
+  bool get _isIncome => _transactionType == 'income';
 
   void _goToStep2() {
     final parsed = double.tryParse(_amountController.text) ?? 0.0;
@@ -85,10 +107,10 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
     if (_selectedCategory == null) {
       HapticFeedback.heavyImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select an expense category'),
+        SnackBar(
+          content: Text(_isIncome ? 'Please select an income source' : 'Please select an expense category'),
           backgroundColor: AppColors.accentRed,
-          duration: Duration(seconds: 2),
+          duration: const Duration(seconds: 2),
         ),
       );
       return;
@@ -112,6 +134,8 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
       categoryId: _selectedCategory!.id ?? 1,
       categoryName: _selectedCategory!.categoryName,
       note: _noteController.text,
+      transactionType: _transactionType,
+      paymentMode: _selectedPaymentMode,
       date: _selectedDate,
       time: _selectedTime,
       customExcelPath: settingsProvider.excelFilePath,
@@ -126,6 +150,7 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
         widget.onExpenseAdded?.call();
         Navigator.of(context).pop();
 
+        final label = _isIncome ? 'Income' : 'Expense';
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -134,13 +159,13 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'Expense of ${CurrencyHelper.formatAmount(_amount, symbol: settingsProvider.currencySymbol)} added successfully!',
+                    '$label of ${CurrencyHelper.formatAmount(_amount, symbol: settingsProvider.currencySymbol)} added successfully!',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
-            backgroundColor: AppColors.accentGreen,
+            backgroundColor: _isIncome ? AppColors.accentGreen : AppColors.primaryGold,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             duration: const Duration(seconds: 3),
@@ -149,7 +174,7 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to save expense. Please try again.'),
+            content: Text('Failed to save transaction. Please try again.'),
             backgroundColor: AppColors.accentRed,
           ),
         );
@@ -232,10 +257,14 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                       Container(
                         padding: const EdgeInsets.all(7),
                         decoration: BoxDecoration(
-                          color: AppColors.primaryGold.withValues(alpha: 0.18),
+                          color: (_isIncome ? AppColors.accentGreen : AppColors.primaryGold).withValues(alpha: 0.18),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.vibration_rounded, color: AppColors.primaryGold, size: 18),
+                        child: Icon(
+                          _isIncome ? Icons.account_balance_wallet_rounded : Icons.vibration_rounded,
+                          color: _isIncome ? AppColors.accentGreen : AppColors.primaryGold,
+                          size: 18,
+                        ),
                       ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -256,9 +285,9 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                 ),
               ),
 
-              // Simple Progress Indicator: Amount → Category → Note
+              // Simple Progress Indicator: Amount → Category → Remarks
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -281,12 +310,12 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                         padding: EdgeInsets.symmetric(horizontal: 8),
                         child: Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF94A3B8)),
                       ),
-                      _buildStepItem('Note', 3),
+                      _buildStepItem('Remarks', 3),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
 
               // Step Content
               Flexible(
@@ -309,7 +338,7 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
 
     Color color;
     if (isCurrent) {
-      color = AppColors.primaryGold;
+      color = _isIncome ? AppColors.accentGreen : AppColors.primaryGold;
     } else if (isDone) {
       color = AppColors.accentGreen;
     } else {
@@ -337,15 +366,16 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
   }
 
   String _getStepTitle() {
+    final typeName = _isIncome ? 'Income' : 'Expense';
     switch (_currentStep) {
       case 1:
-        return 'Step 1: Enter Amount';
+        return 'Step 1: Enter $typeName';
       case 2:
-        return 'Step 2: Select Category';
+        return 'Step 2: Select ${_isIncome ? "Source" : "Category"}';
       case 3:
-        return 'Step 3: Add Note';
+        return 'Step 3: Remarks & Mode';
       default:
-        return 'Add Expense';
+        return 'Add $typeName';
     }
   }
 
@@ -362,41 +392,143 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
     }
   }
 
-  // STEP 1: AMOUNT
+  // STEP 1: TRANSACTION TYPE TOGGLE + AMOUNT
   Widget _buildStep1Amount(String currencySymbol, bool isDark) {
     return SingleChildScrollView(
       key: const ValueKey(1),
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
       child: Column(
         children: [
+          // Transaction Type Selector (Segmented Cards)
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _transactionType = 'expense';
+                        _selectedCategory = null;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: !_isIncome ? const Color(0xFFE11D48) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: !_isIncome
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFE11D48).withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('🔥', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Expense',
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: !_isIncome ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      setState(() {
+                        _transactionType = 'income';
+                        _selectedCategory = null;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: _isIncome ? const Color(0xFF059669) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: _isIncome
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFF059669).withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('💰', style: TextStyle(fontSize: 16)),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Income',
+                            style: TextStyle(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w700,
+                              color: _isIncome ? Colors.white : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           AmountInputWidget(
             controller: _amountController,
             currencySymbol: currencySymbol,
             onAmountChanged: (val) => _amount = val,
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+
           SizedBox(
             width: double.infinity,
-            height: 54,
+            height: 52,
             child: ElevatedButton(
               onPressed: _goToStep2,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryGold,
+                backgroundColor: _isIncome ? AppColors.accentGreen : AppColors.primaryGold,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Continue',
-                    style: TextStyle(
-                      fontSize: 16.5,
+                    'Continue to ${_isIncome ? "Source" : "Category"}',
+                    style: const TextStyle(
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: AppColors.darkNavy,
                     ),
                   ),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded, color: AppColors.darkNavy, size: 20),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_rounded, color: AppColors.darkNavy, size: 20),
                 ],
               ),
             ),
@@ -408,7 +540,9 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
 
   // STEP 2: CATEGORY (3 COLUMNS PER ROW)
   Widget _buildStep2Category(bool isDark) {
-    final categories = context.watch<CategoryProvider>().categories;
+    final catProvider = context.watch<CategoryProvider>();
+    final categories = _isIncome ? catProvider.incomeCategories : catProvider.expenseCategories;
+
     final filteredCategories = categories.where((c) {
       if (_categorySearchQuery.trim().isEmpty) return true;
       return c.categoryName.toLowerCase().contains(_categorySearchQuery.toLowerCase());
@@ -426,7 +560,7 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                 child: TextField(
                   controller: _categorySearchController,
                   decoration: InputDecoration(
-                    hintText: 'Search categories...',
+                    hintText: _isIncome ? 'Search income sources...' : 'Search categories...',
                     prefixIcon: const Icon(Icons.search_rounded, size: 20),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                     isDense: true,
@@ -473,7 +607,7 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
           // Categories Grid (3 COLUMNS)
           ConstrainedBox(
             constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.44,
+              maxHeight: MediaQuery.of(context).size.height * 0.42,
             ),
             child: GridView.builder(
               shrinkWrap: true,
@@ -488,7 +622,9 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
               itemBuilder: (context, index) {
                 final category = filteredCategories[index];
                 final isSelected = _selectedCategory?.id == category.id ||
-                    (_selectedCategory == null && category.categoryName == 'Food & Drinks');
+                    (_selectedCategory == null &&
+                        ((!_isIncome && category.categoryName == 'Food & Drinks') ||
+                            (_isIncome && category.categoryName == 'Salary')));
 
                 return CategoryCard(
                   category: category,
@@ -501,31 +637,30 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
               },
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
           // Continue Button
           SizedBox(
             width: double.infinity,
-            height: 52,
+            height: 50,
             child: ElevatedButton(
               onPressed: () {
-                _selectedCategory ??= filteredCategories.firstWhere(
-                  (c) => c.categoryName == 'Food & Drinks',
-                  orElse: () => filteredCategories.first,
-                );
+                if (_selectedCategory == null && filteredCategories.isNotEmpty) {
+                  _selectedCategory = filteredCategories.first;
+                }
                 _goToStep3();
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryGold,
+                backgroundColor: _isIncome ? AppColors.accentGreen : AppColors.primaryGold,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               ),
               child: const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    'Continue to Note',
+                    'Continue to Remarks',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 15.5,
                       fontWeight: FontWeight.w800,
                       color: AppColors.darkNavy,
                     ),
@@ -541,10 +676,10 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
     );
   }
 
-  // STEP 3: NOTE & APPLY
+  // STEP 3: REMARKS, PAYMENT MODE & APPLY
   Widget _buildStep3NoteAndApply(String currencySymbol, bool isDark) {
-    final catColor = IconHelper.parseColor(_selectedCategory?.color ?? '#FF7043');
-    final iconData = IconHelper.getIcon(_selectedCategory?.icon ?? 'fastfood_rounded');
+    final catColor = IconHelper.parseColor(_selectedCategory?.color ?? (_isIncome ? '#10B981' : '#FF7043'));
+    final iconData = IconHelper.getIcon(_selectedCategory?.icon ?? (_isIncome ? 'payments' : 'fastfood_rounded'));
 
     return SingleChildScrollView(
       key: const ValueKey(3),
@@ -552,7 +687,7 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Selected Summary Badge (Amount + Category)
+          // Selected Summary Badge (Amount + Category + Type)
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -577,20 +712,46 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _selectedCategory?.categoryName ?? 'Category',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _isIncome
+                                  ? AppColors.accentGreen.withValues(alpha: 0.2)
+                                  : const Color(0xFFE11D48).withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              _isIncome ? 'INCOME' : 'EXPENSE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: _isIncome ? AppColors.accentGreen : const Color(0xFFE11D48),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _selectedCategory?.categoryName ?? 'Category',
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 3),
                       Text(
                         CurrencyHelper.formatAmount(_amount, symbol: currencySymbol),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.accentGreen,
+                          color: _isIncome ? AppColors.accentGreen : const Color(0xFFE11D48),
                         ),
                       ),
                     ],
@@ -603,38 +764,82 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
-          // Optional Note Field
+          // Payment Mode Section
           Text(
-            'Note (Optional)',
+            'Payment Mode',
             style: TextStyle(
-              fontSize: 13.5,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
               color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: AppConstants.paymentModes.map((pm) {
+                final isSelected = _selectedPaymentMode == pm;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text(pm),
+                    selected: isSelected,
+                    selectedColor: AppColors.primaryGold,
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                      color: isSelected ? AppColors.darkNavy : (isDark ? Colors.white70 : Colors.black87),
+                    ),
+                    onSelected: (val) {
+                      if (val) {
+                        HapticFeedback.selectionClick();
+                        setState(() => _selectedPaymentMode = pm);
+                      }
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Remarks / Note Field
+          Text(
+            'Remarks / Note (Optional)',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+            ),
+          ),
+          const SizedBox(height: 6),
           TextField(
             controller: _noteController,
             maxLines: 2,
-            decoration: const InputDecoration(
-              hintText: 'e.g. Lunch with team, Groceries, Fuel',
+            decoration: InputDecoration(
+              hintText: _isIncome
+                  ? 'e.g. Monthly salary, Client payout, Dividend'
+                  : 'e.g. Lunch with team, Fuel, Groceries',
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
           // Quick Suggestions Chips
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             child: Row(
-              children: ['Lunch', 'Coffee', 'Dinner', 'Auto/Taxi', 'Groceries', 'Fuel', 'Shopping']
+              children: (_isIncome
+                      ? ['Salary', 'Bonus', 'Client Payout', 'Dividend', 'Rent Received', 'Gift']
+                      : ['Lunch', 'Coffee', 'Dinner', 'Auto/Taxi', 'Groceries', 'Fuel', 'Shopping'])
                   .map(
                     (tag) => Padding(
                       padding: const EdgeInsets.only(right: 6),
                       child: ActionChip(
-                        label: Text(tag, style: const TextStyle(fontSize: 12)),
+                        label: Text(tag, style: const TextStyle(fontSize: 11.5)),
                         padding: EdgeInsets.zero,
                         onPressed: () {
                           HapticFeedback.selectionClick();
@@ -650,29 +855,29 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                   .toList(),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
 
           // Date & Time pickers
           Row(
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.calendar_today_rounded, size: 15),
-                  label: Text(AppDateUtils.formatDate(_selectedDate)),
+                  icon: const Icon(Icons.calendar_today_rounded, size: 14),
+                  label: Text(AppDateUtils.formatDate(_selectedDate), style: const TextStyle(fontSize: 12.5)),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   onPressed: _pickDate,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  icon: const Icon(Icons.access_time_rounded, size: 15),
-                  label: Text(_selectedTime.format(context)),
+                  icon: const Icon(Icons.access_time_rounded, size: 14),
+                  label: Text(_selectedTime.format(context), style: const TextStyle(fontSize: 12.5)),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   onPressed: _pickTime,
@@ -680,16 +885,16 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // Apply Button (Simple & Prominent)
+          // Apply Button
           SizedBox(
             width: double.infinity,
-            height: 54,
+            height: 52,
             child: ElevatedButton(
               onPressed: _isSaving ? null : _applyExpense,
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.accentGreen,
+                backgroundColor: _isIncome ? AppColors.accentGreen : const Color(0xFF10B981),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 3,
@@ -700,15 +905,15 @@ class _ExpenseEntrySheetState extends State<ExpenseEntrySheet> {
                       height: 24,
                       child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                     )
-                  : const Row(
+                  : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.check_circle_rounded, size: 22, color: Colors.white),
-                        SizedBox(width: 8),
+                        const Icon(Icons.check_circle_rounded, size: 20, color: Colors.white),
+                        const SizedBox(width: 8),
                         Text(
-                          'Apply',
-                          style: TextStyle(
-                            fontSize: 17,
+                          _isIncome ? 'Apply Income' : 'Apply Expense',
+                          style: const TextStyle(
+                            fontSize: 16.5,
                             fontWeight: FontWeight.w800,
                             color: Colors.white,
                           ),

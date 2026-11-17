@@ -7,18 +7,21 @@ import '../utils/constants.dart';
 
 typedef ShakeCallback = void Function();
 
-/// Detailed snapshot of shake detection engine state for debug monitoring
+/// Detailed snapshot of shake detection engine state for real-time debugging
 class ShakeDebugInfo {
   final double x;
   final double y;
   final double z;
   final double magnitude;
+  final double angularVelocity;
   final int peakCount;
   final int requiredPeaks;
   final String state; // 'IDLE', 'DETECTING', 'COOLDOWN', 'TRIGGERED'
   final double threshold;
   final String sensitivityLevel; // 'low', 'medium', 'high'
   final int rejectedSingleSpikes;
+  final int rejectedWalkingStairs;
+  final int rejectedSameDirection;
   final int rejectedTimeouts;
   final int rejectedTooFast;
   final int rejectedCooldowns;
@@ -30,12 +33,15 @@ class ShakeDebugInfo {
     this.y = 0.0,
     this.z = 0.0,
     this.magnitude = 0.0,
+    this.angularVelocity = 0.0,
     this.peakCount = 0,
     this.requiredPeaks = AppConstants.minShakePeaks,
     this.state = 'IDLE',
     this.threshold = AppConstants.defaultShakeSensitivity,
     this.sensitivityLevel = AppConstants.defaultShakeSensitivityLevel,
     this.rejectedSingleSpikes = 0,
+    this.rejectedWalkingStairs = 0,
+    this.rejectedSameDirection = 0,
     this.rejectedTimeouts = 0,
     this.rejectedTooFast = 0,
     this.rejectedCooldowns = 0,
@@ -48,12 +54,15 @@ class ShakeDebugInfo {
     double? y,
     double? z,
     double? magnitude,
+    double? angularVelocity,
     int? peakCount,
     int? requiredPeaks,
     String? state,
     double? threshold,
     String? sensitivityLevel,
     int? rejectedSingleSpikes,
+    int? rejectedWalkingStairs,
+    int? rejectedSameDirection,
     int? rejectedTimeouts,
     int? rejectedTooFast,
     int? rejectedCooldowns,
@@ -65,12 +74,15 @@ class ShakeDebugInfo {
       y: y ?? this.y,
       z: z ?? this.z,
       magnitude: magnitude ?? this.magnitude,
+      angularVelocity: angularVelocity ?? this.angularVelocity,
       peakCount: peakCount ?? this.peakCount,
       requiredPeaks: requiredPeaks ?? this.requiredPeaks,
       state: state ?? this.state,
       threshold: threshold ?? this.threshold,
       sensitivityLevel: sensitivityLevel ?? this.sensitivityLevel,
       rejectedSingleSpikes: rejectedSingleSpikes ?? this.rejectedSingleSpikes,
+      rejectedWalkingStairs: rejectedWalkingStairs ?? this.rejectedWalkingStairs,
+      rejectedSameDirection: rejectedSameDirection ?? this.rejectedSameDirection,
       rejectedTimeouts: rejectedTimeouts ?? this.rejectedTimeouts,
       rejectedTooFast: rejectedTooFast ?? this.rejectedTooFast,
       rejectedCooldowns: rejectedCooldowns ?? this.rejectedCooldowns,
@@ -85,6 +97,7 @@ class ShakeDetectionService {
   static final ShakeDetectionService instance = ShakeDetectionService._privateConstructor();
 
   StreamSubscription<UserAccelerometerEvent>? _accelerometerSubscription;
+  StreamSubscription<GyroscopeEvent>? _gyroscopeSubscription;
   ShakeCallback? _onShakeCallback;
 
   bool _isEnabled = true;
@@ -101,8 +114,14 @@ class ShakeDetectionService {
   int _lastPeakAxis = 0; // 0: X, 1: Y, 2: Z
   double _lastPeakSign = 1.0;
 
+  // Gyroscope tracking
+  double _currentAngularVelocity = 0.0;
+  double _peakMaxAngularVelocity = 0.0;
+
   // Rejection metrics for debugging
   int _rejectedSingleSpikes = 0;
+  int _rejectedWalkingStairs = 0;
+  int _rejectedSameDirection = 0;
   int _rejectedTimeouts = 0;
   int _rejectedTooFast = 0;
   int _rejectedCooldowns = 0;
@@ -151,6 +170,8 @@ class ShakeDetectionService {
 
   void resetDebugCounters() {
     _rejectedSingleSpikes = 0;
+    _rejectedWalkingStairs = 0;
+    _rejectedSameDirection = 0;
     _rejectedTimeouts = 0;
     _rejectedTooFast = 0;
     _rejectedCooldowns = 0;
@@ -190,8 +211,24 @@ class ShakeDetectionService {
         cancelOnError: false,
       );
     } catch (e) {
-      debugPrint('Failed to start shake listener: $e');
+      debugPrint('Failed to start accelerometer listener: $e');
     }
+
+    try {
+      _gyroscopeSubscription?.cancel();
+      _gyroscopeSubscription = null;
+      final gyroStream = gyroscopeEventStream();
+      _gyroscopeSubscription = gyroStream.listen(
+        (event) {
+          _currentAngularVelocity = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+          if (_currentAngularVelocity > _peakMaxAngularVelocity) {
+            _peakMaxAngularVelocity = _currentAngularVelocity;
+          }
+        },
+        onError: (_) {},
+        cancelOnError: false,
+      );
+    } catch (_) {}
   }
 
   void stopListening() {
@@ -199,6 +236,11 @@ class ShakeDetectionService {
       _accelerometerSubscription?.cancel();
     } catch (_) {}
     _accelerometerSubscription = null;
+
+    try {
+      _gyroscopeSubscription?.cancel();
+    } catch (_) {}
+    _gyroscopeSubscription = null;
   }
 
   void pause() {
@@ -222,7 +264,7 @@ class ShakeDetectionService {
     final double magnitude = sqrt(x * x + y * y + z * z);
     final int now = DateTime.now().millisecondsSinceEpoch;
 
-    // 1. Check Cooldown
+    // 1. Check Cooldown (2.5s)
     if (now - _lastTriggerTimestamp < _cooldownMs) {
       if (magnitude >= _threshold) {
         _rejectedCooldowns++;
@@ -237,55 +279,63 @@ class ShakeDetectionService {
       return;
     }
 
-    // 2. Window and Inter-Peak Timeout Validation
+    // 2. Inter-Peak Interval & Window Validation
+    // Intentional shake cadence is 3.5-6 Hz (half-cycle: 100-280ms).
+    // Walking cadence is 500-650ms. Stairs cadence is 450-600ms.
+    // If interval > maxTimeBetweenPeaksMs (300ms), it's NOT a rhythmic hand shake -> RESET!
     if (_peakCount > 0) {
       final int elapsedSinceFirst = now - _firstPeakTimestamp;
       final int elapsedSinceLast = now - _lastPeakTimestamp;
 
-      if (elapsedSinceFirst > AppConstants.maxShakeWindowMs ||
-          elapsedSinceLast > AppConstants.maxTimeBetweenPeaksMs) {
+      if (elapsedSinceLast > AppConstants.maxTimeBetweenPeaksMs) {
+        // Paused longer than 300ms (typical of walking step intervals or stair stepping)
         if (_debugLogsEnabled) {
           debugPrint(
-            '[ShakeDetector] Movement rejected/reset: peaks=$_peakCount, elapsedSinceFirst=${elapsedSinceFirst}ms, elapsedSinceLast=${elapsedSinceLast}ms',
+            '[ShakeDetector] Cadence broken (${elapsedSinceLast}ms > ${AppConstants.maxTimeBetweenPeaksMs}ms). Walking/stairs step reset.',
           );
         }
-
+        _rejectedWalkingStairs++;
+        _peakCount = 0;
+        _waitingForValley = false;
+        _peakMaxAngularVelocity = 0.0;
+      } else if (elapsedSinceFirst > AppConstants.maxShakeWindowMs) {
+        // Exceeded total 1100ms window
         if (_peakCount == 1) {
           _rejectedSingleSpikes++;
         } else {
           _rejectedTimeouts++;
         }
-
         _peakCount = 0;
         _waitingForValley = false;
+        _peakMaxAngularVelocity = 0.0;
       }
     }
 
-    // 3. Valley / Hysteresis and Direction Reversal Validation
+    // 3. Valley / Hysteresis & Zero-Crossing Validation
     final double valleyThreshold = _threshold * AppConstants.shakeValleyRatio;
     if (_waitingForValley) {
       if (magnitude < valleyThreshold) {
-        // Dropped below valley threshold, ready to detect the next peak
+        // Signal dropped below 40% threshold, armed for next peak
         _waitingForValley = false;
       } else {
-        // Directional sign reversal check on dominant axis
+        // Directional zero-crossing check on dominant axis
         final double dominantVal = _lastPeakAxis == 0 ? x : (_lastPeakAxis == 1 ? y : z);
         if ((dominantVal * _lastPeakSign) < -valleyThreshold) {
-          // Axis acceleration reversed direction significantly
+          // Axis crossed zero and reached opposite valley
           _waitingForValley = false;
         }
       }
     }
 
-    // 4. Peak Detection and Pattern Validation
+    // 4. Peak Detection and Strict Alternating Direction Reversal
     if (!_waitingForValley && magnitude >= _threshold) {
       final int timeSinceLast = _peakCount == 0 ? 999999 : (now - _lastPeakTimestamp);
 
       if (timeSinceLast < AppConstants.minTimeBetweenPeaksMs) {
-        // High frequency vibration/tap (<100ms), reject as noise
+        // Noise / high-frequency mechanical vibration (<100ms)
         _rejectedTooFast++;
       } else {
-        // Determine dominant axis
+        // Identify dominant axis of acceleration
         final double absX = x.abs();
         final double absY = y.abs();
         final double absZ = z.abs();
@@ -299,24 +349,50 @@ class ShakeDetectionService {
           domVal = z;
         }
 
+        final double domSign = domVal >= 0 ? 1.0 : -1.0;
+
+        // 5. REQUIRE DIRECTION REVERSAL (+ to - or - to + on dominant axis)
+        if (_peakCount > 0) {
+          bool isReversal = false;
+          if (domAxis == _lastPeakAxis) {
+            isReversal = (domSign != _lastPeakSign);
+          } else {
+            // If dominant axis shifted, verify projection on previous axis reversed sign
+            final double prevVal = _lastPeakAxis == 0 ? x : (_lastPeakAxis == 1 ? y : z);
+            isReversal = (prevVal * _lastPeakSign) < -valleyThreshold;
+          }
+
+          if (!isReversal) {
+            // Consecutive peak in the SAME direction!
+            // (e.g. running footfalls, downward stair heel strikes, or continuous pulling from pocket)
+            _rejectedSameDirection++;
+            if (_debugLogsEnabled) {
+              debugPrint('[ShakeDetector] Rejected same-direction bump (axis: $domAxis, sign: $domSign)');
+            }
+            return;
+          }
+        }
+
+        // Valid alternating peak registered!
         _peakCount++;
         _lastPeakTimestamp = now;
         _waitingForValley = true;
         _lastPeakAxis = domAxis;
-        _lastPeakSign = domVal >= 0 ? 1.0 : -1.0;
+        _lastPeakSign = domSign;
 
         if (_peakCount == 1) {
           _firstPeakTimestamp = now;
+          _peakMaxAngularVelocity = _currentAngularVelocity;
           if (_debugLogsEnabled) {
-            debugPrint('[ShakeDetector] Peak 1/4 (mag: ${magnitude.toStringAsFixed(2)}, axis: $domAxis)');
+            debugPrint('[ShakeDetector] Peak 1/4 (mag: ${magnitude.toStringAsFixed(2)}, axis: $domAxis, sign: $domSign)');
           }
         } else {
           if (_debugLogsEnabled) {
-            debugPrint('[ShakeDetector] Peak $_peakCount/4 (interval: ${timeSinceLast}ms, mag: ${magnitude.toStringAsFixed(2)})');
+            debugPrint('[ShakeDetector] Peak $_peakCount/4 (interval: ${timeSinceLast}ms, mag: ${magnitude.toStringAsFixed(2)}, sign: $domSign)');
           }
         }
 
-        // 5. Require at least 4 distinct valid peaks within window
+        // 6. Complete 4-Peak Intentional Shake Validation
         if (_peakCount >= AppConstants.minShakePeaks) {
           if (_debugLogsEnabled) {
             debugPrint(
@@ -328,6 +404,7 @@ class ShakeDetectionService {
           _lastShakeTimestamp = DateTime.now();
           _peakCount = 0;
           _waitingForValley = false;
+          _peakMaxAngularVelocity = 0.0;
 
           _updateDebugNotifier(
             x: x,
@@ -365,12 +442,15 @@ class ShakeDetectionService {
       y: y ?? debugNotifier.value.y,
       z: z ?? debugNotifier.value.z,
       magnitude: magnitude ?? debugNotifier.value.magnitude,
+      angularVelocity: _currentAngularVelocity,
       peakCount: _peakCount,
       requiredPeaks: AppConstants.minShakePeaks,
       state: state ?? debugNotifier.value.state,
       threshold: _threshold,
       sensitivityLevel: _sensitivityLevel,
       rejectedSingleSpikes: _rejectedSingleSpikes,
+      rejectedWalkingStairs: _rejectedWalkingStairs,
+      rejectedSameDirection: _rejectedSameDirection,
       rejectedTimeouts: _rejectedTimeouts,
       rejectedTooFast: _rejectedTooFast,
       rejectedCooldowns: _rejectedCooldowns,

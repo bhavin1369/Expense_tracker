@@ -5,6 +5,7 @@ import '../providers/category_provider.dart';
 import '../providers/expense_provider.dart';
 import '../providers/settings_provider.dart';
 import '../utils/constants.dart';
+import '../utils/currency_formatter.dart';
 import '../widgets/expense_card.dart';
 import '../widgets/expense_details_modal.dart';
 
@@ -18,11 +19,25 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _selectedQuickPeriod = 'All'; // 'All', 'Today', 'This Week', 'This Month'
+  String _selectedType = 'All'; // 'All', 'Expense', 'Income'
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onTypeSelected(String type) {
+    HapticFeedback.selectionClick();
+    setState(() => _selectedType = type);
+    final expenseProvider = context.read<ExpenseProvider>();
+    if (type == 'Expense') {
+      expenseProvider.setTransactionTypeFilter('expense');
+    } else if (type == 'Income') {
+      expenseProvider.setTransactionTypeFilter('income');
+    } else {
+      expenseProvider.setTransactionTypeFilter(null);
+    }
   }
 
   void _onQuickPeriodSelected(String period) {
@@ -128,7 +143,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final expenses = expenseProvider.filteredExpenses;
     final hasActiveFilters = expenseProvider.searchQuery.isNotEmpty ||
         expenseProvider.selectedCategoryId != null ||
-        _selectedQuickPeriod != 'All';
+        _selectedQuickPeriod != 'All' ||
+        _selectedType != 'All';
+
+    final totalFiltered = expenses.fold(0.0, (sum, e) => sum + (e.isIncome ? e.amount : -e.amount));
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
@@ -150,7 +168,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
               onPressed: () {
                 HapticFeedback.lightImpact();
                 _searchController.clear();
-                setState(() => _selectedQuickPeriod = 'All');
+                setState(() {
+                  _selectedQuickPeriod = 'All';
+                  _selectedType = 'All';
+                });
                 expenseProvider.clearFilters();
               },
             ),
@@ -160,11 +181,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
         children: [
           // Search Field
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search by category or note...',
+                hintText: 'Search by category, remarks or note...',
                 prefixIcon: const Icon(Icons.search_rounded, size: 20),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
@@ -184,11 +205,65 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
 
-          // Simple Quick Period Chips: All | Today | This Week | This Month
+          // Type Segmented Switcher: All | 🔥 Expense | 💰 Income
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkCard : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark ? AppColors.darkBorder : AppColors.lightBorder,
+                ),
+              ),
+              child: Row(
+                children: ['All', 'Expense', 'Income'].map((type) {
+                  final isSelected = _selectedType == type;
+                  Color activeColor;
+                  if (type == 'Expense') {
+                    activeColor = const Color(0xFFE11D48);
+                  } else if (type == 'Income') {
+                    activeColor = const Color(0xFF059669);
+                  } else {
+                    activeColor = AppColors.primaryGold;
+                  }
+
+                  return Expanded(
+                    child: InkWell(
+                      onTap: () => _onTypeSelected(type),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isSelected ? activeColor : Colors.transparent,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Center(
+                          child: Text(
+                            type == 'Expense' ? '🔥 Expense' : (type == 'Income' ? '💰 Income' : 'All'),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                              color: isSelected
+                                  ? (type == 'All' ? AppColors.darkNavy : Colors.white)
+                                  : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+
+          // Quick Period Chips: All | Today | This Week | This Month
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Row(
               children: ['All', 'Today', 'This Week', 'This Month'].map((period) {
                 final isSelected = _selectedQuickPeriod == period;
@@ -200,7 +275,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     selectedColor: AppColors.primaryGold.withValues(alpha: isDark ? 0.25 : 0.2),
                     checkmarkColor: AppColors.primaryGold,
                     labelStyle: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 12,
                       fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
                       color: isSelected
                           ? (isDark ? AppColors.primaryGoldLight : AppColors.primaryGoldDark)
@@ -220,7 +295,33 @@ class _HistoryScreenState extends State<HistoryScreen> {
               }).toList(),
             ),
           ),
-          const SizedBox(height: 6),
+
+          // Count & Total header
+          if (expenses.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${expenses.length} transaction${expenses.length == 1 ? "" : "s"}',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                    ),
+                  ),
+                  Text(
+                    'Net: ${CurrencyHelper.formatAmount(totalFiltered.abs(), symbol: currencySymbol)} ${totalFiltered >= 0 ? "(+)" : "(-)"}',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: totalFiltered >= 0 ? const Color(0xFF059669) : const Color(0xFFE11D48),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           // Transactions Feed
           Expanded(
@@ -238,9 +339,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           ),
                           const SizedBox(height: 14),
                           Text(
-                            hasActiveFilters
-                                ? 'No matching expenses found'
-                                : 'No expenses recorded yet',
+                            hasActiveFilters ? 'No matching transactions found' : 'No transactions recorded yet',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
@@ -250,8 +349,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           const SizedBox(height: 6),
                           Text(
                             hasActiveFilters
-                                ? 'Try changing your search term or filter'
-                                : 'Shake your phone anytime to add your first expense!',
+                                ? 'Try clearing or changing your filters'
+                                : 'Shake your phone anytime to add an expense or income!',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,
@@ -263,7 +362,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     itemCount: expenses.length,
                     itemBuilder: (context, index) {
                       final expense = expenses[index];

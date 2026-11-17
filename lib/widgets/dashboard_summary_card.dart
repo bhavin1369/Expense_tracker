@@ -6,10 +6,11 @@ class DashboardSummaryCard extends StatelessWidget {
   final double todayTotal;
   final double thisMonthTotal;
   final String currencySymbol;
-  // Optional parameters for compatibility
   final double thisWeekTotal;
   final double thisYearTotal;
   final int totalTransactions;
+  final double thisMonthIncome;
+  final double thisMonthNetSavings;
 
   const DashboardSummaryCard({
     super.key,
@@ -19,13 +20,17 @@ class DashboardSummaryCard extends StatelessWidget {
     this.thisWeekTotal = 0.0,
     this.thisYearTotal = 0.0,
     this.totalTransactions = 0,
+    this.thisMonthIncome = 0.0,
+    this.thisMonthNetSavings = 0.0,
   });
 
   @override
   Widget build(BuildContext context) {
+    final hasIncome = thisMonthIncome > 0;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [
@@ -74,9 +79,9 @@ class DashboardSummaryCard extends StatelessWidget {
                   const Text(
                     "THIS MONTH'S EXPENSES",
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: 11.5,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 1.0,
+                      letterSpacing: 0.9,
                       color: Color(0xFFCBD5E1),
                     ),
                   ),
@@ -100,7 +105,7 @@ class DashboardSummaryCard extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
           // Large prominent monthly total
           Text(
@@ -112,14 +117,78 @@ class DashboardSummaryCard extends StatelessWidget {
               color: Colors.white,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+
+          // Optional Income & Net Savings row
+          if (hasIncome) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF059669).withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF059669).withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Income 💰',
+                          style: TextStyle(fontSize: 11, color: Color(0xFFA7F3D0), fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '+${CurrencyHelper.formatAmount(thisMonthIncome, symbol: currencySymbol)}',
+                          style: const TextStyle(fontSize: 13.5, color: Colors.white, fontWeight: FontWeight.w800),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: (thisMonthNetSavings >= 0 ? AppColors.primaryGold : const Color(0xFFE11D48)).withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: (thisMonthNetSavings >= 0 ? AppColors.primaryGold : const Color(0xFFE11D48)).withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Net Savings',
+                          style: TextStyle(fontSize: 11, color: Color(0xFFFDE68A), fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          CurrencyHelper.formatAmount(thisMonthNetSavings, symbol: currencySymbol),
+                          style: const TextStyle(fontSize: 13.5, color: Colors.white, fontWeight: FontWeight.w800),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
 
           // Divider
           Container(
             height: 1,
             color: Colors.white.withValues(alpha: 0.12),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
 
           // Today's Expenses sub-card / pill
           Container(
@@ -157,7 +226,7 @@ class DashboardSummaryCard extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
-                    color: AppColors.accentGreen,
+                    color: AppColors.primaryGold,
                   ),
                 ),
               ],

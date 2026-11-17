@@ -111,6 +111,8 @@ class HomeScreen extends StatelessWidget {
                   thisWeekTotal: expenseProvider.thisWeekTotal,
                   thisYearTotal: expenseProvider.thisYearTotal,
                   totalTransactions: expenseProvider.totalTransactionsCount,
+                  thisMonthIncome: expenseProvider.thisMonthIncome,
+                  thisMonthNetSavings: expenseProvider.thisMonthNetSavings,
                 ),
                 const SizedBox(height: 20),
 

@@ -2,27 +2,43 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   static const String appName = 'Shake Expense Tracker';
-  static const String appVersion = '1.0.0';
+  static const String appVersion = '2.0.0';
   static const String defaultExcelFileName = 'My_Expense_Tracker.xlsx';
-  static const String excelSheetName = 'Expenses';
+  static const String excelSheetName = 'Transactions';
+  static const String excelDashboardSheetName = 'Dashboard';
+  static const String defaultDeviceName = 'Android Device';
 
   // Default Settings
   static const String defaultUserName = 'User';
   static const String defaultCurrency = 'INR';
   static const String defaultCurrencySymbol = '₹';
 
-  // Shake Detection Algorithm Constants (Multi-Peak Linear Acceleration)
+  // Shake Detection Algorithm Constants (Multi-Peak Linear Acceleration + Cadence Filter)
   static const String defaultShakeSensitivityLevel = 'medium';
-  static const double shakeThresholdLow = 4.2; // m/s^2 linear acceleration (Strong deliberate shake)
-  static const double shakeThresholdMedium = 3.0; // m/s^2 linear acceleration (Balanced, Default)
-  static const double shakeThresholdHigh = 2.4; // m/s^2 linear acceleration (Lighter shake)
-  static const double defaultShakeSensitivity = shakeThresholdMedium; // 3.0 m/s^2
+  static const double shakeThresholdLow = 3.8; // m/s^2 linear acceleration (Strong deliberate shake)
+  static const double shakeThresholdMedium = 2.8; // m/s^2 linear acceleration (Balanced, Default)
+  static const double shakeThresholdHigh = 2.2; // m/s^2 linear acceleration (Light intentional shake)
+  static const double defaultShakeSensitivity = shakeThresholdMedium; // 2.8 m/s^2
   static const int defaultShakeCooldown = 2500; // ms (2.5s cooldown after successful shake)
   static const int minShakePeaks = 4; // At least 4 distinct alternating peaks required
-  static const int maxShakeWindowMs = 1500; // 1.5s maximum detection window
-  static const int minTimeBetweenPeaksMs = 100; // 100ms minimum interval to filter noise
-  static const int maxTimeBetweenPeaksMs = 500; // 500ms maximum interval between peaks
-  static const double shakeValleyRatio = 0.55; // Magnitude must drop below threshold * 0.55 before next peak
+  static const int maxShakeWindowMs = 1100; // 1.1s maximum detection window (800-1200 ms)
+  static const int minTimeBetweenPeaksMs = 100; // 100ms minimum interval to filter noise & vehicle vibrations
+  static const int maxTimeBetweenPeaksMs = 300; // 300ms maximum interval (Walking/stairs cadence >450ms is rejected!)
+  static const double shakeValleyRatio = 0.40; // Magnitude must drop below threshold * 0.40 or cross zero
+  static const double minGyroscopeOscillation = 1.5; // rad/s angular velocity threshold for wrist shake
+
+  // Transaction Types & Payment Modes (from reference video)
+  static const String typeExpense = 'expense';
+  static const String typeIncome = 'income';
+
+  static const List<String> paymentModes = [
+    'UPI',
+    'Cash',
+    'Credit Card',
+    'Debit Card',
+    'Bank Transfer',
+    'Other',
+  ];
 
   static const String defaultTheme = 'system';
 

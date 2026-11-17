@@ -7,8 +7,8 @@ class CategoryRepository {
   CategoryRepository({DatabaseHelper? dbHelper})
       : _dbHelper = dbHelper ?? DatabaseHelper.instance;
 
-  Future<List<CategoryModel>> getAllCategories({bool activeOnly = true}) async {
-    return await _dbHelper.getAllCategories(activeOnly: activeOnly);
+  Future<List<CategoryModel>> getAllCategories({bool activeOnly = true, String? categoryType}) async {
+    return await _dbHelper.getAllCategories(activeOnly: activeOnly, categoryType: categoryType);
   }
 
   Future<CategoryModel?> getCategoryById(int id) async {

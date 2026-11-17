@@ -9,6 +9,8 @@ class CategoryProvider with ChangeNotifier {
   bool _isLoading = true;
 
   List<CategoryModel> get categories => _categories;
+  List<CategoryModel> get expenseCategories => _categories.where((c) => c.isExpense).toList();
+  List<CategoryModel> get incomeCategories => _categories.where((c) => c.isIncome).toList();
   bool get isLoading => _isLoading;
 
   Future<void> loadCategories() async {
@@ -24,9 +26,10 @@ class CategoryProvider with ChangeNotifier {
     required String name,
     required String icon,
     required String color,
+    String categoryType = 'expense',
   }) async {
     final existing = _categories.any(
-      (c) => c.categoryName.toLowerCase() == name.trim().toLowerCase(),
+      (c) => c.categoryName.toLowerCase() == name.trim().toLowerCase() && c.categoryType == categoryType,
     );
     if (existing) {
       return false;
@@ -34,6 +37,7 @@ class CategoryProvider with ChangeNotifier {
 
     final newCategory = CategoryModel(
       categoryName: name.trim(),
+      categoryType: categoryType,
       icon: icon,
       color: color,
       isDefault: false,

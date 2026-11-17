@@ -3,7 +3,6 @@ package com.fintech.expensetracker.expense_tracker
 import android.annotation.SuppressLint
 import android.content.ContentValues
 import android.content.Context
-import android.content.res.ColorStateList
 import android.database.sqlite.SQLiteDatabase
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -22,7 +21,6 @@ import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.*
@@ -38,9 +36,11 @@ object FloatingExpenseOverlay {
     private var currentWindowManager: WindowManager? = null
 
     // State
+    private var currentTransactionType: String = "expense" // "expense" or "income"
     private var currentAmount: Double = 0.0
     private var selectedCategory: CategoryData? = null
     private var currentNote: String = ""
+    private var selectedPaymentMode: String = "UPI"
     private var currencySymbol: String = "₹"
     private var allCategories: List<CategoryData> = emptyList()
 
@@ -48,7 +48,8 @@ object FloatingExpenseOverlay {
         val id: Long,
         val name: String,
         val colorHex: String,
-        val icon: String
+        val icon: String,
+        val categoryType: String = "expense"
     )
 
     fun show(context: Context) {
@@ -63,10 +64,13 @@ object FloatingExpenseOverlay {
                 // Load data from shared SQLite
                 currencySymbol = loadCurrency(context)
                 allCategories = loadCategories(context)
-                selectedCategory = allCategories.firstOrNull { it.name == "Food & Drinks" } ?: allCategories.firstOrNull()
+                currentTransactionType = "expense"
+                selectedCategory = allCategories.firstOrNull { it.categoryType == "expense" && it.name == "Food & Drinks" }
+                    ?: allCategories.firstOrNull { it.categoryType == "expense" }
 
                 currentAmount = 0.0
                 currentNote = ""
+                selectedPaymentMode = "UPI"
 
                 val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
                 currentWindowManager = wm
@@ -134,7 +138,7 @@ object FloatingExpenseOverlay {
     private fun buildOverlayView(context: Context): View {
         // 1. Root Scrim Container (Dark dimming background)
         val rootLayout = FrameLayout(context).apply {
-            setBackgroundColor(Color.argb(150, 0, 0, 0))
+            setBackgroundColor(Color.argb(160, 10, 15, 30))
             isClickable = true
             isFocusable = true
         }
@@ -169,31 +173,31 @@ object FloatingExpenseOverlay {
         cardLayout.layoutParams = cardParams
         rootLayout.addView(cardLayout)
 
-        // 3. Step Container (Switches between Step 1, 2, 3)
+        // 3. Step Container (Switches between Step 0: Type, Step 1: Amount, Step 2: Category, Step 3: Note)
         val stepContainer = FrameLayout(context)
         cardLayout.addView(stepContainer)
 
-        // Show Step 1 Initially
-        showStep1Amount(context, cardLayout, stepContainer)
+        // Show Step 0 (Type Selection matching video prompt) initially
+        showStep0TypeSelection(context, cardLayout, stepContainer)
 
         return rootLayout
     }
 
     // ==========================================
-    // STEP 1: AMOUNT VIEW
+    // STEP 0: TYPE SELECTION (EXPENSE VS INCOME)
     // ==========================================
 
-    private fun showStep1Amount(context: Context, cardLayout: LinearLayout, stepContainer: FrameLayout) {
+    private fun showStep0TypeSelection(context: Context, cardLayout: LinearLayout, stepContainer: FrameLayout) {
         stepContainer.removeAllViews()
 
         val stepView = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
         }
 
-        // Top Header: Title & Close Button
+        // Top Header
         val headerRow = RelativeLayout(context)
         val titleView = TextView(context).apply {
-            text = "ADD EXPENSE"
+            text = "QUICK TRANSACTION"
             textSize = 17f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#0F172A"))
@@ -213,8 +217,238 @@ object FloatingExpenseOverlay {
         headerRow.addView(closeBtn, closeParams)
         stepView.addView(headerRow)
 
+        val subtext = TextView(context).apply {
+            text = "What would you like to record?"
+            textSize = 13f
+            setTextColor(Color.parseColor("#64748B"))
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(context, 4f)
+                bottomMargin = dp(context, 16f)
+            }
+            layoutParams = p
+        }
+        stepView.addView(subtext)
+
+        // Two prominent cards: Expense vs Income
+        val typesRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+            layoutParams = p
+        }
+
+        // 1. Expense Card
+        val expenseCard = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(Color.parseColor("#FFF1F2")) // Soft red tint
+                cornerRadius = dp(context, 16f).toFloat()
+                setStroke(dp(context, 1.5f), Color.parseColor("#F43F5E"))
+            })
+            val pad = dp(context, 16f)
+            setPadding(pad, pad, pad, pad)
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = dp(context, 8f)
+            }
+            layoutParams = p
+            setOnClickListener {
+                currentTransactionType = "expense"
+                selectedCategory = allCategories.firstOrNull { it.categoryType == "expense" && it.name == "Food & Drinks" }
+                    ?: allCategories.firstOrNull { it.categoryType == "expense" }
+                showStep1Amount(context, cardLayout, stepContainer)
+            }
+        }
+        val expIcon = TextView(context).apply {
+            text = "🔥"
+            textSize = 34f
+            gravity = Gravity.CENTER
+        }
+        val expTitle = TextView(context).apply {
+            text = "Expense"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#E11D48"))
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(context, 4f)
+            }
+            layoutParams = p
+        }
+        val expSub = TextView(context).apply {
+            text = "Money Out"
+            textSize = 11.5f
+            setTextColor(Color.parseColor("#881337"))
+        }
+        expenseCard.addView(expIcon)
+        expenseCard.addView(expTitle)
+        expenseCard.addView(expSub)
+
+        // 2. Income Card
+        val incomeCard = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(Color.parseColor("#F0FDF4")) // Soft green tint
+                cornerRadius = dp(context, 16f).toFloat()
+                setStroke(dp(context, 1.5f), Color.parseColor("#10B981"))
+            })
+            val pad = dp(context, 16f)
+            setPadding(pad, pad, pad, pad)
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = dp(context, 8f)
+            }
+            layoutParams = p
+            setOnClickListener {
+                currentTransactionType = "income"
+                selectedCategory = allCategories.firstOrNull { it.categoryType == "income" && it.name == "Salary" }
+                    ?: allCategories.firstOrNull { it.categoryType == "income" }
+                showStep1Amount(context, cardLayout, stepContainer)
+            }
+        }
+        val incIcon = TextView(context).apply {
+            text = "💰"
+            textSize = 34f
+            gravity = Gravity.CENTER
+        }
+        val incTitle = TextView(context).apply {
+            text = "Income"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#059669"))
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(context, 4f)
+            }
+            layoutParams = p
+        }
+        val incSub = TextView(context).apply {
+            text = "Money In"
+            textSize = 11.5f
+            setTextColor(Color.parseColor("#064E3B"))
+        }
+        incomeCard.addView(incIcon)
+        incomeCard.addView(incTitle)
+        incomeCard.addView(incSub)
+
+        typesRow.addView(expenseCard)
+        typesRow.addView(incomeCard)
+        stepView.addView(typesRow)
+
+        stepContainer.addView(stepView)
+    }
+
+    // ==========================================
+    // STEP 1: AMOUNT VIEW
+    // ==========================================
+
+    private fun showStep1Amount(context: Context, cardLayout: LinearLayout, stepContainer: FrameLayout) {
+        stepContainer.removeAllViews()
+
+        val stepView = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+
+        // Top Header: Title & Close Button
+        val headerRow = RelativeLayout(context)
+        val backBtn = ImageView(context).apply {
+            setImageResource(android.R.drawable.ic_media_previous)
+            setColorFilter(Color.parseColor("#0F172A"))
+            val p = dp(context, 4f)
+            setPadding(p, p, p, p)
+            setOnClickListener {
+                showStep0TypeSelection(context, cardLayout, stepContainer)
+            }
+        }
+        val backParams = RelativeLayout.LayoutParams(dp(context, 32f), dp(context, 32f)).apply {
+            addRule(RelativeLayout.ALIGN_PARENT_LEFT)
+            addRule(RelativeLayout.CENTER_VERTICAL)
+        }
+        val isIncome = currentTransactionType == "income"
+        val titleView = TextView(context).apply {
+            text = if (isIncome) "ADD INCOME 💰" else "ADD EXPENSE 🔥"
+            textSize = 16f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (isIncome) Color.parseColor("#059669") else Color.parseColor("#E11D48"))
+            val p = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply {
+                addRule(RelativeLayout.CENTER_IN_PARENT)
+            }
+            layoutParams = p
+        }
+        val closeBtn = ImageView(context).apply {
+            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            setColorFilter(Color.parseColor("#64748B"))
+            val p = dp(context, 6f)
+            setPadding(p, p, p, p)
+            setOnClickListener { dismiss() }
+        }
+        val closeParams = RelativeLayout.LayoutParams(dp(context, 32f), dp(context, 32f)).apply {
+            addRule(RelativeLayout.ALIGN_PARENT_RIGHT)
+            addRule(RelativeLayout.CENTER_VERTICAL)
+        }
+        headerRow.addView(backBtn, backParams)
+        headerRow.addView(titleView)
+        headerRow.addView(closeBtn, closeParams)
+        stepView.addView(headerRow)
+
         // Progress Indicator
         stepView.addView(buildProgressIndicator(context, 1))
+
+        // Type Switcher Row (Inline toggle so user can easily flip)
+        val toggleRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(Color.parseColor("#F1F5F9"))
+                cornerRadius = dp(context, 12f).toFloat()
+            })
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 38f)).apply {
+                topMargin = dp(context, 10f)
+            }
+            layoutParams = p
+            setPadding(dp(context, 3f), dp(context, 3f), dp(context, 3f), dp(context, 3f))
+        }
+
+        val expToggle = TextView(context).apply {
+            text = "🔥 Expense"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(if (!isIncome) Color.WHITE else Color.parseColor("#64748B"))
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(if (!isIncome) Color.parseColor("#E11D48") else Color.TRANSPARENT)
+                cornerRadius = dp(context, 10f).toFloat()
+            })
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            layoutParams = p
+            setOnClickListener {
+                if (currentTransactionType != "expense") {
+                    currentTransactionType = "expense"
+                    selectedCategory = allCategories.firstOrNull { it.categoryType == "expense" }
+                    showStep1Amount(context, cardLayout, stepContainer)
+                }
+            }
+        }
+
+        val incToggle = TextView(context).apply {
+            text = "💰 Income"
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setTextColor(if (isIncome) Color.WHITE else Color.parseColor("#64748B"))
+            setBackgroundDrawable(GradientDrawable().apply {
+                setColor(if (isIncome) Color.parseColor("#059669") else Color.TRANSPARENT)
+                cornerRadius = dp(context, 10f).toFloat()
+            })
+            val p = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
+            layoutParams = p
+            setOnClickListener {
+                if (currentTransactionType != "income") {
+                    currentTransactionType = "income"
+                    selectedCategory = allCategories.firstOrNull { it.categoryType == "income" }
+                    showStep1Amount(context, cardLayout, stepContainer)
+                }
+            }
+        }
+        toggleRow.addView(expToggle)
+        toggleRow.addView(incToggle)
+        stepView.addView(toggleRow)
 
         // Amount Box Container
         val amountBox = LinearLayout(context).apply {
@@ -225,16 +459,16 @@ object FloatingExpenseOverlay {
                 cornerRadius = dp(context, 16f).toFloat()
                 setStroke(dp(context, 1.2f), Color.parseColor("#E2E8F0"))
             })
-            setPadding(dp(context, 16f), dp(context, 16f), dp(context, 16f), dp(context, 16f))
+            setPadding(dp(context, 14f), dp(context, 14f), dp(context, 14f), dp(context, 14f))
         }
         val boxParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(context, 14f)
+            topMargin = dp(context, 12f)
         }
         stepView.addView(amountBox, boxParams)
 
         val promptText = TextView(context).apply {
-            text = "ENTER AMOUNT"
-            textSize = 11.5f
+            text = if (isIncome) "ENTER INCOME AMOUNT" else "ENTER EXPENSE AMOUNT"
+            textSize = 11f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#64748B"))
             letterSpacing = 0.08f
@@ -250,7 +484,7 @@ object FloatingExpenseOverlay {
             text = currencySymbol
             textSize = 32f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#D4AF37")) // Gold
+            setTextColor(if (isIncome) Color.parseColor("#10B981") else Color.parseColor("#D4AF37"))
         }
         val amountEditText = EditText(context).apply {
             hint = "0"
@@ -278,26 +512,26 @@ object FloatingExpenseOverlay {
             imm?.showSoftInput(amountEditText, InputMethodManager.SHOW_IMPLICIT)
         }, 150)
 
-        // Quick add chips: +50, +100, +200, +500, +1000
+        // Quick add chips
         val chipsScroll = HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
         val chipsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(context, 12f), 0, 0)
+            setPadding(0, dp(context, 10f), 0, 0)
         }
-        val quickAmounts = listOf(50, 100, 200, 500, 1000)
+        val quickAmounts = if (isIncome) listOf(500, 1000, 2000, 5000, 10000) else listOf(50, 100, 200, 500, 1000)
         for (q in quickAmounts) {
             val chip = TextView(context).apply {
                 text = "+$currencySymbol$q"
                 textSize = 12.5f
                 typeface = Typeface.DEFAULT_BOLD
-                setTextColor(Color.parseColor("#B8860B"))
+                setTextColor(if (isIncome) Color.parseColor("#059669") else Color.parseColor("#B8860B"))
                 setBackgroundDrawable(GradientDrawable().apply {
-                    setColor(Color.parseColor("#F9F1D8"))
+                    setColor(if (isIncome) Color.parseColor("#DCFCE7") else Color.parseColor("#F9F1D8"))
                     cornerRadius = dp(context, 12f).toFloat()
-                    setStroke(dp(context, 1f), Color.parseColor("#D4AF37"))
+                    setStroke(dp(context, 1f), if (isIncome) Color.parseColor("#10B981") else Color.parseColor("#D4AF37"))
                 })
                 setPadding(dp(context, 12f), dp(context, 6f), dp(context, 12f), dp(context, 6f))
                 val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -331,14 +565,14 @@ object FloatingExpenseOverlay {
         val btnRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(context, 20f)
+                topMargin = dp(context, 16f)
             }
             layoutParams = p
         }
 
         val cancelBtn = Button(context).apply {
             text = "Close"
-            textSize = 14.5f
+            textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#64748B"))
             setBackgroundDrawable(GradientDrawable().apply {
@@ -346,7 +580,7 @@ object FloatingExpenseOverlay {
                 cornerRadius = dp(context, 14f).toFloat()
             })
             val p = LinearLayout.LayoutParams(0, dp(context, 48f), 1f).apply {
-                rightMargin = dp(context, 10f)
+                rightMargin = dp(context, 8f)
             }
             layoutParams = p
             setOnClickListener { dismiss() }
@@ -413,9 +647,10 @@ object FloatingExpenseOverlay {
             addRule(RelativeLayout.ALIGN_PARENT_LEFT)
             addRule(RelativeLayout.CENTER_VERTICAL)
         }
+        val isIncome = currentTransactionType == "income"
         val titleView = TextView(context).apply {
-            text = "SELECT CATEGORY"
-            textSize = 16.5f
+            text = if (isIncome) "SELECT INCOME SOURCE" else "SELECT CATEGORY"
+            textSize = 15.5f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#0F172A"))
             val p = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -432,7 +667,7 @@ object FloatingExpenseOverlay {
 
         // Search Field
         val searchEditText = EditText(context).apply {
-            hint = "Search categories..."
+            hint = if (isIncome) "Search income sources..." else "Search categories..."
             textSize = 13.5f
             setTextColor(Color.parseColor("#0F172A"))
             setHintTextColor(Color.parseColor("#94A3B8"))
@@ -444,8 +679,8 @@ object FloatingExpenseOverlay {
             val pad = dp(context, 10f)
             setPadding(pad, pad, pad, pad)
             val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(context, 10f)
-                bottomMargin = dp(context, 10f)
+                topMargin = dp(context, 8f)
+                bottomMargin = dp(context, 8f)
             }
             layoutParams = p
         }
@@ -453,7 +688,7 @@ object FloatingExpenseOverlay {
 
         // Category Grid Container (ScrollView with 3-column rows)
         val gridScrollView = ScrollView(context).apply {
-            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 230f))
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 220f))
             layoutParams = p
             overScrollMode = View.OVER_SCROLL_NEVER
         }
@@ -463,9 +698,11 @@ object FloatingExpenseOverlay {
         gridScrollView.addView(gridContainer)
         stepView.addView(gridScrollView)
 
+        val relevantCategories = allCategories.filter { it.categoryType == currentTransactionType }
+
         fun populateGrid(filterText: String) {
             gridContainer.removeAllViews()
-            val filtered = allCategories.filter {
+            val filtered = relevantCategories.filter {
                 filterText.isEmpty() || it.name.lowercase().contains(filterText.lowercase())
             }
 
@@ -567,7 +804,7 @@ object FloatingExpenseOverlay {
 
         // Continue Button
         val continueBtn = Button(context).apply {
-            text = "Continue to Note →"
+            text = "Continue to Remarks →"
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#0F172A"))
@@ -576,12 +813,12 @@ object FloatingExpenseOverlay {
                 cornerRadius = dp(context, 14f).toFloat()
             })
             val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 48f)).apply {
-                topMargin = dp(context, 14f)
+                topMargin = dp(context, 12f)
             }
             layoutParams = p
             setOnClickListener {
-                if (selectedCategory == null && allCategories.isNotEmpty()) {
-                    selectedCategory = allCategories[0]
+                if (selectedCategory == null && relevantCategories.isNotEmpty()) {
+                    selectedCategory = relevantCategories[0]
                 }
                 showStep3Note(context, cardLayout, stepContainer)
             }
@@ -592,7 +829,7 @@ object FloatingExpenseOverlay {
     }
 
     // ==========================================
-    // STEP 3: NOTE & APPLY
+    // STEP 3: NOTE, PAYMENT MODE & APPLY
     // ==========================================
 
     private fun showStep3Note(context: Context, cardLayout: LinearLayout, stepContainer: FrameLayout) {
@@ -618,8 +855,8 @@ object FloatingExpenseOverlay {
             addRule(RelativeLayout.CENTER_VERTICAL)
         }
         val titleView = TextView(context).apply {
-            text = "ADD NOTE (OPTIONAL)"
-            textSize = 16f
+            text = "REMARKS & PAYMENT MODE"
+            textSize = 15.5f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#0F172A"))
             val p = RelativeLayout.LayoutParams(RelativeLayout.LayoutParams.WRAP_CONTENT, RelativeLayout.LayoutParams.WRAP_CONTENT).apply {
@@ -634,21 +871,23 @@ object FloatingExpenseOverlay {
         // Progress Indicator
         stepView.addView(buildProgressIndicator(context, 3))
 
-        // Selected Summary Badge (Amount + Category)
+        val isIncome = currentTransactionType == "income"
+
+        // Selected Summary Badge (Type + Amount + Category)
         val summaryBadge = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setBackgroundDrawable(GradientDrawable().apply {
-                setColor(Color.parseColor("#FDF3D6")) // Gold soft tint
+                setColor(if (isIncome) Color.parseColor("#F0FDF4") else Color.parseColor("#FDF3D6"))
                 cornerRadius = dp(context, 14f).toFloat()
-                setStroke(dp(context, 1.2f), Color.parseColor("#D4AF37"))
+                setStroke(dp(context, 1.2f), if (isIncome) Color.parseColor("#10B981") else Color.parseColor("#D4AF37"))
             })
             val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(context, 10f)
-                bottomMargin = dp(context, 12f)
+                topMargin = dp(context, 8f)
+                bottomMargin = dp(context, 8f)
             }
             layoutParams = p
-            val pad = dp(context, 12f)
+            val pad = dp(context, 10f)
             setPadding(pad, pad, pad, pad)
         }
 
@@ -661,8 +900,8 @@ object FloatingExpenseOverlay {
             orientation = LinearLayout.VERTICAL
         }
         val catNameView = TextView(context).apply {
-            text = selectedCategory?.name ?: "Category"
-            textSize = 14f
+            text = "${if (isIncome) "[INCOME]" else "[EXPENSE]"} ${selectedCategory?.name ?: "General"}"
+            textSize = 13.5f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.parseColor("#0F172A"))
         }
@@ -670,7 +909,7 @@ object FloatingExpenseOverlay {
             text = "$currencySymbol${if (currentAmount % 1 == 0.0) currentAmount.toInt().toString() else String.format(Locale.US, "%.2f", currentAmount)}"
             textSize = 16f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.parseColor("#10B981")) // Green
+            setTextColor(if (isIncome) Color.parseColor("#10B981") else Color.parseColor("#E11D48"))
         }
         summaryCol.addView(catNameView)
         summaryCol.addView(amountView)
@@ -678,25 +917,84 @@ object FloatingExpenseOverlay {
         summaryBadge.addView(summaryCol)
         stepView.addView(summaryBadge)
 
+        // Payment Mode Label
+        val modeLabel = TextView(context).apply {
+            text = "PAYMENT MODE"
+            textSize = 11f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.parseColor("#64748B"))
+            letterSpacing = 0.06f
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(context, 4f)
+                bottomMargin = dp(context, 4f)
+            }
+            layoutParams = p
+        }
+        stepView.addView(modeLabel)
+
+        // Payment Mode Chips
+        val modeScroll = HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+        }
+        val modeRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val paymentModes = listOf("UPI", "Cash", "Credit Card", "Debit Card", "Bank Transfer", "Other")
+
+        fun renderPaymentChips() {
+            modeRow.removeAllViews()
+            for (pm in paymentModes) {
+                val isSelected = selectedPaymentMode == pm
+                val chip = TextView(context).apply {
+                    text = pm
+                    textSize = 12f
+                    typeface = if (isSelected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
+                    setTextColor(if (isSelected) Color.parseColor("#0F172A") else Color.parseColor("#64748B"))
+                    setBackgroundDrawable(GradientDrawable().apply {
+                        setColor(if (isSelected) Color.parseColor("#D4AF37") else Color.parseColor("#F1F5F9"))
+                        cornerRadius = dp(context, 10f).toFloat()
+                    })
+                    setPadding(dp(context, 10f), dp(context, 6f), dp(context, 10f), dp(context, 6f))
+                    val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                        rightMargin = dp(context, 6f)
+                    }
+                    layoutParams = p
+                    setOnClickListener {
+                        selectedPaymentMode = pm
+                        renderPaymentChips()
+                    }
+                }
+                modeRow.addView(chip)
+            }
+        }
+        renderPaymentChips()
+        modeScroll.addView(modeRow)
+        stepView.addView(modeScroll)
+
         // Note Input Field
         val noteEditText = EditText(context).apply {
-            hint = "e.g. Lunch with friends, Fuel, Groceries..."
-            textSize = 14f
+            hint = if (isIncome) "Remarks (e.g. Monthly salary, Client payout...)" else "Remarks (e.g. Lunch with team, Fuel...)"
+            textSize = 13.5f
             setTextColor(Color.parseColor("#0F172A"))
             setHintTextColor(Color.parseColor("#94A3B8"))
             setBackgroundDrawable(GradientDrawable().apply {
                 setColor(Color.parseColor("#F8F9FA"))
-                cornerRadius = dp(context, 14f).toFloat()
+                cornerRadius = dp(context, 12f).toFloat()
                 setStroke(dp(context, 1.2f), Color.parseColor("#E2E8F0"))
             })
-            val pad = dp(context, 12f)
+            val pad = dp(context, 10f)
             setPadding(pad, pad, pad, pad)
             minLines = 2
-            maxLines = 3
+            maxLines = 2
             gravity = Gravity.TOP or Gravity.START
             if (currentNote.isNotEmpty()) {
                 setText(currentNote)
             }
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(context, 8f)
+            }
+            layoutParams = p
         }
         stepView.addView(noteEditText)
 
@@ -707,21 +1005,25 @@ object FloatingExpenseOverlay {
         }
         val tagsRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(context, 10f), 0, 0)
+            setPadding(0, dp(context, 6f), 0, 0)
         }
-        val quickTags = listOf("Lunch", "Coffee", "Dinner", "Auto/Taxi", "Groceries", "Fuel", "Shopping")
+        val quickTags = if (isIncome) {
+            listOf("Salary", "Bonus", "Client Payout", "Dividend", "Rent Received", "Gift")
+        } else {
+            listOf("Lunch", "Coffee", "Dinner", "Auto/Taxi", "Groceries", "Fuel", "Shopping")
+        }
         for (tag in quickTags) {
             val chip = TextView(context).apply {
                 text = tag
-                textSize = 12f
+                textSize = 11.5f
                 setTextColor(Color.parseColor("#475569"))
                 setBackgroundDrawable(GradientDrawable().apply {
                     setColor(Color.parseColor("#F1F5F9"))
-                    cornerRadius = dp(context, 10f).toFloat()
+                    cornerRadius = dp(context, 8f).toFloat()
                 })
-                setPadding(dp(context, 10f), dp(context, 5f), dp(context, 10f), dp(context, 5f))
+                setPadding(dp(context, 8f), dp(context, 4f), dp(context, 8f), dp(context, 4f))
                 val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    rightMargin = dp(context, 6f)
+                    rightMargin = dp(context, 5f)
                 }
                 layoutParams = p
                 setOnClickListener {
@@ -737,21 +1039,21 @@ object FloatingExpenseOverlay {
 
         // Apply Button
         val applyBtn = Button(context).apply {
-            text = "Apply & Save"
-            textSize = 16f
+            text = if (isIncome) "Apply & Save Income" else "Apply & Save Expense"
+            textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(Color.WHITE)
             setBackgroundDrawable(GradientDrawable().apply {
-                setColor(Color.parseColor("#10B981")) // Green
+                setColor(if (isIncome) Color.parseColor("#059669") else Color.parseColor("#10B981"))
                 cornerRadius = dp(context, 14f).toFloat()
             })
-            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 50f)).apply {
-                topMargin = dp(context, 18f)
+            val p = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(context, 48f)).apply {
+                topMargin = dp(context, 14f)
             }
             layoutParams = p
             setOnClickListener {
                 currentNote = noteEditText.text.toString().trim()
-                saveExpenseAndFinish(context)
+                saveTransactionAndFinish(context)
             }
         }
         stepView.addView(applyBtn)
@@ -763,25 +1065,29 @@ object FloatingExpenseOverlay {
     // STEP 4: SAVE TO SQLITE & DISMISS
     // ==========================================
 
-    private fun saveExpenseAndFinish(context: Context) {
+    private fun saveTransactionAndFinish(context: Context) {
         val cat = selectedCategory ?: return
 
         // 1. Save in SQLite
-        val txnId = saveExpenseToDb(
+        val txnId = saveTransactionToDb(
             context = context,
             amount = currentAmount,
             categoryId = cat.id,
             categoryName = cat.name,
-            note = currentNote
+            note = currentNote,
+            transactionType = currentTransactionType,
+            paymentMode = selectedPaymentMode
         )
 
-        // 2. Notify Flutter if active to trigger immediate Excel append
+        // 2. Notify Flutter if active to trigger immediate Excel sync
         if (txnId != null) {
             MainActivity.notifyExpenseAddedFromOverlay(
                 txnId = txnId,
                 amount = currentAmount,
                 categoryName = cat.name,
-                note = currentNote
+                note = currentNote,
+                transactionType = currentTransactionType,
+                paymentMode = selectedPaymentMode
             )
         }
 
@@ -793,9 +1099,10 @@ object FloatingExpenseOverlay {
 
         // 5. Success Toast
         val displayAmount = if (currentAmount % 1 == 0.0) currentAmount.toInt().toString() else String.format(Locale.US, "%.2f", currentAmount)
+        val typeLabel = if (currentTransactionType == "income") "Income" else "Expense"
         Toast.makeText(
             context,
-            "Expense Added Successfully! ($currencySymbol$displayAmount - ${cat.name})",
+            "$typeLabel Added Successfully! ($currencySymbol$displayAmount - ${cat.name})",
             Toast.LENGTH_LONG
         ).show()
     }
@@ -804,12 +1111,14 @@ object FloatingExpenseOverlay {
     // SQLITE HELPER
     // ==========================================
 
-    private fun saveExpenseToDb(
+    private fun saveTransactionToDb(
         context: Context,
         amount: Double,
         categoryId: Long,
         categoryName: String,
-        note: String
+        note: String,
+        transactionType: String,
+        paymentMode: String
     ): String? {
         return try {
             val dbFile = context.getDatabasePath("expense_tracker.db")
@@ -827,7 +1136,9 @@ object FloatingExpenseOverlay {
                 val timeStr = timeFormat.format(now)
                 val isoStr = isoFormat.format(now)
                 val rawUuid = UUID.randomUUID().toString().replace("-", "").substring(0, 8).uppercase()
-                val txnId = "TXN-${dateStr.replace("-", "")}-$rawUuid"
+                val prefix = if (transactionType == "income") "INC" else "TXN"
+                val txnId = "$prefix-${dateStr.replace("-", "")}-$rawUuid"
+                val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
 
                 val values = ContentValues().apply {
                     put("transaction_id", txnId)
@@ -840,6 +1151,11 @@ object FloatingExpenseOverlay {
                     put("created_at", isoStr)
                     put("updated_at", isoStr)
                     put("is_synced_excel", 0) // Marked pending sync
+                    put("transaction_type", transactionType)
+                    put("payment_mode", paymentMode)
+                    put("currency", currencySymbol)
+                    put("device_name", deviceName)
+                    put("sync_status", "Pending")
                 }
 
                 db.insertOrThrow("expenses", null, values)
@@ -861,17 +1177,25 @@ object FloatingExpenseOverlay {
             val dbFile = context.getDatabasePath("expense_tracker.db")
             if (dbFile.exists()) {
                 val db = SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
-                val cursor = db.rawQuery(
-                    "SELECT id, category_name, color, icon FROM categories WHERE is_active = 1 ORDER BY is_default DESC, id ASC",
-                    null
-                )
+                val cursor = try {
+                    db.rawQuery(
+                        "SELECT id, category_name, color, icon, category_type FROM categories WHERE is_active = 1 ORDER BY is_default DESC, id ASC",
+                        null
+                    )
+                } catch (_: Exception) {
+                    db.rawQuery(
+                        "SELECT id, category_name, color, icon, 'expense' FROM categories WHERE is_active = 1 ORDER BY is_default DESC, id ASC",
+                        null
+                    )
+                }
                 while (cursor.moveToNext()) {
                     list.add(
                         CategoryData(
                             id = cursor.getLong(0),
                             name = cursor.getString(1),
                             colorHex = cursor.getString(2),
-                            icon = cursor.getString(3)
+                            icon = cursor.getString(3),
+                            categoryType = if (cursor.isNull(4)) "expense" else cursor.getString(4)
                         )
                     )
                 }
@@ -883,27 +1207,36 @@ object FloatingExpenseOverlay {
         }
 
         if (list.isEmpty()) {
+            // Fallback default expense categories
             list.addAll(
                 listOf(
-                    CategoryData(1, "Food & Drinks", "#FF7043", "fastfood"),
-                    CategoryData(2, "Transportation", "#42A5F5", "directions_car"),
-                    CategoryData(3, "Shopping", "#AB47BC", "shopping_bag"),
-                    CategoryData(4, "Groceries", "#66BB6A", "local_grocery_store"),
-                    CategoryData(5, "Entertainment", "#FFA726", "movie"),
-                    CategoryData(6, "Bills & Utilities", "#26A69A", "receipt"),
-                    CategoryData(7, "Health & Medical", "#EF5350", "medical_services"),
-                    CategoryData(8, "Education", "#5C6BC0", "school"),
-                    CategoryData(9, "Travel", "#EC407A", "flight"),
-                    CategoryData(10, "Personal Care", "#8D6E63", "spa"),
-                    CategoryData(11, "Rent & Housing", "#78909C", "home"),
-                    CategoryData(12, "Fuel", "#FF7043", "local_gas_station"),
-                    CategoryData(13, "Mobile & Internet", "#29B6F6", "wifi"),
-                    CategoryData(14, "Sports & Fitness", "#66BB6A", "fitness_center"),
-                    CategoryData(15, "Electronics", "#26A69A", "devices"),
-                    CategoryData(16, "College Expenses", "#7E57C2", "account_balance"),
-                    CategoryData(17, "Hostel Expenses", "#26C6DA", "hotel"),
-                    CategoryData(18, "Office Expenses", "#9CCC65", "business_center"),
-                    CategoryData(19, "Other", "#BDBDBD", "more_horiz")
+                    CategoryData(1, "Food & Drinks", "#FF7043", "fastfood", "expense"),
+                    CategoryData(2, "Transportation", "#42A5F5", "directions_car", "expense"),
+                    CategoryData(3, "Shopping", "#AB47BC", "shopping_bag", "expense"),
+                    CategoryData(4, "Groceries", "#66BB6A", "local_grocery_store", "expense"),
+                    CategoryData(5, "Entertainment", "#FFA726", "movie", "expense"),
+                    CategoryData(6, "Bills & Utilities", "#26A69A", "receipt", "expense"),
+                    CategoryData(7, "Health & Medical", "#EF5350", "medical_services", "expense"),
+                    CategoryData(8, "Education", "#5C6BC0", "school", "expense"),
+                    CategoryData(9, "Travel", "#EC407A", "flight", "expense"),
+                    CategoryData(10, "Personal Care", "#8D6E63", "spa", "expense"),
+                    CategoryData(11, "Rent & Housing", "#78909C", "home", "expense"),
+                    CategoryData(12, "Fuel", "#FF7043", "local_gas_station", "expense"),
+                    CategoryData(13, "Mobile & Internet", "#29B6F6", "wifi", "expense"),
+                    CategoryData(14, "Sports & Fitness", "#66BB6A", "fitness_center", "expense"),
+                    CategoryData(15, "Electronics", "#26A69A", "devices", "expense"),
+                    CategoryData(16, "Other", "#BDBDBD", "more_horiz", "expense"),
+                    // Default income categories
+                    CategoryData(101, "Salary", "#10B981", "payments", "income"),
+                    CategoryData(102, "Business", "#059669", "storefront", "income"),
+                    CategoryData(103, "Freelance", "#0D9488", "laptop", "income"),
+                    CategoryData(104, "Content Creation", "#8B5CF6", "videocam", "income"),
+                    CategoryData(105, "Investments", "#3B82F6", "trending_up", "income"),
+                    CategoryData(106, "Interest / Dividends", "#6366F1", "savings", "income"),
+                    CategoryData(107, "Rental Income", "#14B8A6", "apartment", "income"),
+                    CategoryData(108, "Commission", "#F59E0B", "percent", "income"),
+                    CategoryData(109, "Pension", "#64748B", "account_balance", "income"),
+                    CategoryData(110, "Other Income", "#94A3B8", "attach_money", "income")
                 )
             )
         }
@@ -967,7 +1300,7 @@ object FloatingExpenseOverlay {
         layout.addView(arrow())
         layout.addView(stepItem("Category", 2))
         layout.addView(arrow())
-        layout.addView(stepItem("Note", 3))
+        layout.addView(stepItem("Remarks", 3))
 
         return layout
     }
@@ -996,9 +1329,16 @@ object FloatingExpenseOverlay {
             "college expenses" -> "🎓"
             "hostel expenses" -> "🏢"
             "office expenses" -> "💼"
-            "bike maintenance" -> "🏍️"
-            "home maintenance" -> "🔧"
-            "online orders" -> "📦"
+            "salary" -> "💼"
+            "business" -> "🏬"
+            "freelance" -> "💻"
+            "content creation" -> "🎥"
+            "investments" -> "📈"
+            "interest / dividends", "interest & dividends" -> "🏦"
+            "rental income" -> "🏢"
+            "commission" -> "🤝"
+            "pension" -> "👴"
+            "other income" -> "💵"
             else -> "🏷️"
         }
     }

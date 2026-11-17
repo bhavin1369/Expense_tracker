@@ -6,7 +6,7 @@ import '../models/user_settings_model.dart';
 
 class DatabaseHelper {
   static const String _databaseName = 'expense_tracker.db';
-  static const int _databaseVersion = 2;
+  static const int _databaseVersion = 3;
 
   DatabaseHelper._privateConstructor();
   static final DatabaseHelper instance = DatabaseHelper._privateConstructor();
@@ -37,6 +37,7 @@ class DatabaseHelper {
       CREATE TABLE categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         category_name TEXT NOT NULL,
+        category_type TEXT NOT NULL DEFAULT 'expense',
         icon TEXT NOT NULL,
         color TEXT NOT NULL,
         is_default INTEGER NOT NULL DEFAULT 0,
@@ -54,11 +55,16 @@ class DatabaseHelper {
         category_id INTEGER NOT NULL,
         category_name TEXT NOT NULL,
         note TEXT,
+        transaction_type TEXT NOT NULL DEFAULT 'expense',
+        payment_mode TEXT NOT NULL DEFAULT 'UPI',
+        currency TEXT NOT NULL DEFAULT 'INR',
+        device_name TEXT NOT NULL DEFAULT 'Android Device',
         expense_date TEXT NOT NULL,
         expense_time TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        is_synced_excel INTEGER NOT NULL DEFAULT 0
+        is_synced_excel INTEGER NOT NULL DEFAULT 0,
+        sync_status TEXT NOT NULL DEFAULT 'Pending'
       )
     ''');
 
@@ -66,6 +72,7 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_expenses_date ON expenses (expense_date)');
     await db.execute('CREATE INDEX idx_expenses_category ON expenses (category_id)');
     await db.execute('CREATE INDEX idx_expenses_transaction_id ON expenses (transaction_id)');
+    await db.execute('CREATE INDEX idx_expenses_type ON expenses (transaction_type)');
 
     // 3. Create user_settings table
     await db.execute('''
@@ -74,7 +81,7 @@ class DatabaseHelper {
         user_name TEXT NOT NULL,
         shake_enabled INTEGER NOT NULL DEFAULT 1,
         background_shake_enabled INTEGER NOT NULL DEFAULT 0,
-        shake_sensitivity REAL NOT NULL DEFAULT 3.0,
+        shake_sensitivity REAL NOT NULL DEFAULT 2.8,
         shake_sensitivity_level TEXT NOT NULL DEFAULT 'medium',
         shake_cooldown INTEGER NOT NULL DEFAULT 2500,
         currency TEXT NOT NULL DEFAULT 'INR',
@@ -103,6 +110,36 @@ class DatabaseHelper {
         await db.execute("ALTER TABLE user_settings ADD COLUMN shake_sensitivity_level TEXT NOT NULL DEFAULT 'medium'");
       } catch (_) {}
     }
+    if (oldVersion < 3) {
+      try {
+        await db.execute("ALTER TABLE expenses ADD COLUMN transaction_type TEXT NOT NULL DEFAULT 'expense'");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE expenses ADD COLUMN payment_mode TEXT NOT NULL DEFAULT 'UPI'");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE expenses ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE expenses ADD COLUMN device_name TEXT NOT NULL DEFAULT 'Android Device'");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE expenses ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'Pending'");
+      } catch (_) {}
+      try {
+        await db.execute("ALTER TABLE categories ADD COLUMN category_type TEXT NOT NULL DEFAULT 'expense'");
+      } catch (_) {}
+      try {
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_expenses_type ON expenses (transaction_type)");
+      } catch (_) {}
+
+      // Prepopulate default income categories if not present
+      final batch = db.batch();
+      for (final cat in CategoryModel.defaultIncomeCategories) {
+        batch.insert('categories', cat.toMap(), conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+      await batch.commit(noResult: true);
+    }
   }
 
   // ================= EXPENSE OPERATIONS ================= //
@@ -128,10 +165,26 @@ class DatabaseHelper {
 
   Future<int> updateExpenseExcelSyncStatus(String transactionId, bool isSynced) async {
     final db = await database;
+    final status = isSynced ? 'Synced' : 'Pending';
     return await db.update(
       'expenses',
       {
         'is_synced_excel': isSynced ? 1 : 0,
+        'sync_status': status,
+        'updated_at': DateTime.now().toIso8601String(),
+      },
+      where: 'transaction_id = ?',
+      whereArgs: [transactionId],
+    );
+  }
+
+  Future<int> updateExpenseSyncStatus(String transactionId, String status) async {
+    final db = await database;
+    return await db.update(
+      'expenses',
+      {
+        'sync_status': status,
+        'is_synced_excel': status == 'Synced' ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
       where: 'transaction_id = ?',
@@ -179,6 +232,7 @@ class DatabaseHelper {
   Future<List<ExpenseModel>> getAllExpenses({
     String? searchQuery,
     int? categoryId,
+    String? transactionType,
     DateTime? startDate,
     DateTime? endDate,
     double? minAmount,
@@ -191,7 +245,8 @@ class DatabaseHelper {
     final List<dynamic> whereArgs = [];
 
     if (searchQuery != null && searchQuery.trim().isNotEmpty) {
-      whereClauses.add('(category_name LIKE ? OR note LIKE ?)');
+      whereClauses.add('(category_name LIKE ? OR note LIKE ? OR payment_mode LIKE ?)');
+      whereArgs.add('%$searchQuery%');
       whereArgs.add('%$searchQuery%');
       whereArgs.add('%$searchQuery%');
     }
@@ -199,6 +254,11 @@ class DatabaseHelper {
     if (categoryId != null) {
       whereClauses.add('category_id = ?');
       whereArgs.add(categoryId);
+    }
+
+    if (transactionType != null && transactionType.isNotEmpty && transactionType != 'all') {
+      whereClauses.add('transaction_type = ?');
+      whereArgs.add(transactionType);
     }
 
     if (startDate != null) {
@@ -241,7 +301,7 @@ class DatabaseHelper {
     final db = await database;
     final List<Map<String, dynamic>> maps = await db.query(
       'expenses',
-      where: 'is_synced_excel = 0',
+      where: "sync_status != 'Synced' OR is_synced_excel = 0",
       orderBy: 'id ASC',
     );
     return List.generate(maps.length, (i) => ExpenseModel.fromMap(maps[i]));
@@ -249,11 +309,24 @@ class DatabaseHelper {
 
   // ================= CATEGORY OPERATIONS ================= //
 
-  Future<List<CategoryModel>> getAllCategories({bool activeOnly = true}) async {
+  Future<List<CategoryModel>> getAllCategories({bool activeOnly = true, String? categoryType}) async {
     final db = await database;
+    final List<String> whereClauses = [];
+    final List<dynamic> whereArgs = [];
+
+    if (activeOnly) {
+      whereClauses.add('is_active = 1');
+    }
+
+    if (categoryType != null && categoryType.isNotEmpty && categoryType != 'all') {
+      whereClauses.add('category_type = ?');
+      whereArgs.add(categoryType);
+    }
+
     final List<Map<String, dynamic>> maps = await db.query(
       'categories',
-      where: activeOnly ? 'is_active = 1' : null,
+      where: whereClauses.isNotEmpty ? whereClauses.join(' AND ') : null,
+      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
       orderBy: 'is_default DESC, category_name ASC',
     );
     return List.generate(maps.length, (i) => CategoryModel.fromMap(maps[i]));

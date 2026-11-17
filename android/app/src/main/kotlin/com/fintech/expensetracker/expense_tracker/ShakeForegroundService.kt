@@ -18,11 +18,15 @@ class ShakeForegroundService : Service(), SensorEventListener {
 
     private var sensorManager: SensorManager? = null
     private var activeSensor: Sensor? = null
+    private var gyroSensor: Sensor? = null
     private var isUsingLinearAcceleration: Boolean = false
 
     // Gravity filter fallback when TYPE_LINEAR_ACCELERATION is not available
     private val gravity = FloatArray(3) { 0f }
     private var hasGravityInitialized = false
+
+    // Gyroscope tracking to confirm real angular oscillation
+    private var lastGyroMagnitude: Float = 0f
 
     // Detection state machine variables
     private var peakCount: Int = 0
@@ -58,14 +62,14 @@ class ShakeForegroundService : Service(), SensorEventListener {
         const val KEY_SENSITIVITY = "saved_sensitivity"
         const val KEY_COOLDOWN = "saved_cooldown"
 
-        // Detection constants
-        const val DEFAULT_SENSITIVITY = 3.0f // m/s^2 linear acceleration (Medium default)
+        // Detection constants - mathematically calibrated to eliminate walking/stairs
+        const val DEFAULT_SENSITIVITY = 3.2f // m/s^2 linear acceleration
         const val DEFAULT_COOLDOWN_MS = 2500L
-        const val MIN_PEAKS = 4 // Require at least 4 distinct alternating peaks
-        const val MAX_WINDOW_MS = 1500L // 1.5s total window
-        const val MIN_TIME_BETWEEN_PEAKS_MS = 100L // Filter out high-frequency vibrations
-        const val MAX_TIME_BETWEEN_PEAKS_MS = 500L // Maximum time between consecutive peaks
-        const val VALLEY_RATIO = 0.55f // Must drop below threshold * 0.55 or reverse direction
+        const val MIN_PEAKS = 4 // Require at least 4 alternating peaks
+        const val MAX_WINDOW_MS = 1100L // 1.1s total window
+        const val MIN_TIME_BETWEEN_PEAKS_MS = 100L // Filter out engine vibrations (>10Hz)
+        const val MAX_TIME_BETWEEN_PEAKS_MS = 300L // Maximum time between consecutive peaks (walking cadence is ~500ms!)
+        const val VALLEY_RATIO = 0.40f // Must drop below 40% threshold between peaks
 
         var isRunning: Boolean = false
             private set
@@ -98,6 +102,9 @@ class ShakeForegroundService : Service(), SensorEventListener {
             isUsingLinearAcceleration = false
             Log.d(TAG, "Initialized with fallback Sensor.TYPE_ACCELEROMETER + 3D LPF")
         }
+
+        // Gyroscope sensor to confirm manual oscillation
+        gyroSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -166,6 +173,9 @@ class ShakeForegroundService : Service(), SensorEventListener {
         activeSensor?.let {
             sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
         }
+        gyroSensor?.let {
+            sensorManager?.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME)
+        }
     }
 
     private fun unregisterSensorListener() {
@@ -173,7 +183,18 @@ class ShakeForegroundService : Service(), SensorEventListener {
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event == null || activeSensor == null) return
+        if (event == null) return
+
+        // Track Gyroscope angular rate
+        if (event.sensor.type == Sensor.TYPE_GYROSCOPE) {
+            val gx = event.values[0]
+            val gy = event.values[1]
+            val gz = event.values[2]
+            lastGyroMagnitude = sqrt((gx * gx + gy * gy + gz * gz).toDouble()).toFloat()
+            return
+        }
+
+        if (event.sensor != activeSensor) return
 
         var linX: Float
         var linY: Float
@@ -210,18 +231,19 @@ class ShakeForegroundService : Service(), SensorEventListener {
         }
 
         // 2. Window and Inter-Peak Timeout Validation
+        // Walking cadence is ~500ms between steps. Human shake is 100-300ms between reversals.
         if (peakCount > 0) {
             val elapsedSinceFirst = now - firstPeakTimestamp
             val elapsedSinceLast = now - lastPeakTimestamp
 
             if (elapsedSinceFirst > MAX_WINDOW_MS || elapsedSinceLast > MAX_TIME_BETWEEN_PEAKS_MS) {
-                // Shake rhythm broken or timed out -> reset to prevent single spikes from accumulating
+                // Rhythm broken or step cadence timed out -> reset to zero immediately
                 peakCount = 0
                 waitingForValley = false
             }
         }
 
-        // 3. Valley / Hysteresis and Direction Reversal Validation
+        // 3. Valley / Hysteresis Validation
         val valleyThreshold = sensitivity * VALLEY_RATIO
         if (waitingForValley) {
             if (magnitude < valleyThreshold) {
@@ -244,6 +266,7 @@ class ShakeForegroundService : Service(), SensorEventListener {
             val timeSinceLast = if (peakCount == 0) 999999L else (now - lastPeakTimestamp)
 
             if (timeSinceLast >= MIN_TIME_BETWEEN_PEAKS_MS) {
+                // Find dominant axis and sign
                 val absX = abs(linX)
                 val absY = abs(linY)
                 val absZ = abs(linZ)
@@ -256,19 +279,37 @@ class ShakeForegroundService : Service(), SensorEventListener {
                     domAxis = 2
                     domVal = linZ
                 }
+                val domSign = if (domVal >= 0) 1.0f else -1.0f
+
+                // CRITICAL ROOT-CAUSE FIX: Enforce strict alternating direction reversal!
+                // Walking, stair climbing/descending, running, and pocket removal produce unilateral peaks
+                // in the same direction on the dominant axis.
+                // A genuine shake MUST reverse direction back and forth (+ -> - -> + -> -)!
+                if (peakCount > 0) {
+                    if (domAxis == lastPeakAxis && domSign == lastPeakSign) {
+                        // Same sign in succession -> Unilateral footfall/impact! Reject!
+                        return
+                    }
+                }
 
                 peakCount++
                 lastPeakTimestamp = now
                 waitingForValley = true
                 lastPeakAxis = domAxis
-                lastPeakSign = if (domVal >= 0) 1.0f else -1.0f
+                lastPeakSign = domSign
 
                 if (peakCount == 1) {
                     firstPeakTimestamp = now
                 }
 
-                // 5. Require at least 4 distinct valid peaks
+                // 5. Require at least 4 distinct alternating peaks
                 if (peakCount >= MIN_PEAKS) {
+                    // Optional gyro check if gyroscope is present: require minimal angular oscillation (> 1.2 rad/s)
+                    if (gyroSensor != null && lastGyroMagnitude < 1.2f) {
+                        // Translation-only vibration (like vehicle or train bumping) without wrist rotation -> ignore
+                        return
+                    }
+
                     lastTriggerTimestamp = now
                     peakCount = 0
                     waitingForValley = false

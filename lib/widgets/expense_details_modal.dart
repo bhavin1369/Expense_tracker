@@ -28,9 +28,9 @@ class ExpenseDetailsModal extends StatelessWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete Expense?'),
+        title: Text(expense.isIncome ? 'Delete Income Record?' : 'Delete Expense?'),
         content: Text(
-          'Are you sure you want to delete this expense of ${CurrencyHelper.formatAmount(expense.amount)} for "${expense.categoryName}"?\n\nThis will remove it from the database and update your permanent Excel workbook.',
+          'Are you sure you want to delete this ${expense.isIncome ? "income" : "expense"} of ${CurrencyHelper.formatAmount(expense.amount)} for "${expense.categoryName}"?\n\nThis will remove it from SQLite and update your permanent Excel workbook.',
         ),
         actions: [
           TextButton(
@@ -43,8 +43,8 @@ class ExpenseDetailsModal extends StatelessWidget {
               foregroundColor: Colors.white,
             ),
             onPressed: () async {
-              Navigator.of(ctx).pop(); // close dialog
-              Navigator.of(context).pop(); // close details modal
+              Navigator.of(ctx).pop();
+              Navigator.of(context).pop();
               final settings = context.read<SettingsProvider>();
               await context.read<ExpenseProvider>().deleteExpense(
                     expense.id!,
@@ -53,7 +53,7 @@ class ExpenseDetailsModal extends StatelessWidget {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Expense deleted successfully'),
+                    content: Text('Record deleted successfully'),
                     backgroundColor: AppColors.accentRed,
                   ),
                 );
@@ -67,7 +67,7 @@ class ExpenseDetailsModal extends StatelessWidget {
   }
 
   void _showEditDialog(BuildContext context) {
-    Navigator.of(context).pop(); // close modal
+    Navigator.of(context).pop();
     showDialog(
       context: context,
       builder: (ctx) => _EditExpenseDialog(expense: expense),
@@ -85,6 +85,7 @@ class ExpenseDetailsModal extends StatelessWidget {
 
     final catColor = IconHelper.parseColor(category.color);
     final iconData = IconHelper.getIcon(category.icon);
+    final isIncome = expense.isIncome;
 
     return Container(
       decoration: BoxDecoration(
@@ -114,30 +115,56 @@ class ExpenseDetailsModal extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: catColor.withValues(alpha: 0.2),
+                    color: (isIncome ? const Color(0xFF059669) : catColor).withValues(alpha: 0.2),
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(iconData, color: catColor, size: 28),
+                  child: Icon(iconData, color: isIncome ? const Color(0xFF059669) : catColor, size: 28),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        expense.categoryName,
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isIncome
+                                  ? const Color(0xFF059669).withValues(alpha: 0.15)
+                                  : const Color(0xFFE11D48).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isIncome ? 'INCOME' : 'EXPENSE',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: isIncome ? const Color(0xFF059669) : const Color(0xFFE11D48),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              expense.categoryName,
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: isDark ? AppColors.darkTextPrimary : AppColors.lightTextPrimary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 4),
                       Text(
-                        CurrencyHelper.formatAmount(expense.amount, symbol: currencySymbol),
-                        style: const TextStyle(
+                        '${isIncome ? "+" : "-"}${CurrencyHelper.formatAmount(expense.amount, symbol: currencySymbol)}',
+                        style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.accentGreen,
+                          color: isIncome ? const Color(0xFF059669) : const Color(0xFFE11D48),
                         ),
                       ),
                     ],
@@ -153,20 +180,23 @@ class ExpenseDetailsModal extends StatelessWidget {
             const Divider(),
             const SizedBox(height: 12),
             _buildDetailRow('Transaction ID', expense.transactionId, isDark),
+            _buildDetailRow('Transaction Type', isIncome ? 'Income 💰' : 'Expense 🔥', isDark),
+            _buildDetailRow('Payment Mode', expense.paymentMode, isDark),
             _buildDetailRow(
               'Date & Time',
               '${AppDateUtils.formatFullDate(expense.expenseDate)} at ${AppDateUtils.formatDisplayTime(expense.expenseTime)}',
               isDark,
             ),
             if (expense.note != null && expense.note!.trim().isNotEmpty)
-              _buildDetailRow('Description / Note', expense.note!, isDark),
+              _buildDetailRow('Remarks / Note', expense.note!, isDark),
             _buildDetailRow(
               'Excel Workbook Sync',
               expense.isSyncedExcel ? 'Synchronized (Row appended)' : 'Pending Synchronization',
               isDark,
               statusColor: expense.isSyncedExcel ? AppColors.accentGreen : AppColors.accentOrange,
             ),
-            _buildDetailRow('Logged At', AppDateUtils.formatDateTime(expense.createdAt), isDark),
+            _buildDetailRow('Device Logged', expense.deviceName, isDark),
+            _buildDetailRow('Created At', AppDateUtils.formatDateTime(expense.createdAt), isDark),
             const SizedBox(height: 24),
             Row(
               children: [
@@ -204,7 +234,7 @@ class ExpenseDetailsModal extends StatelessWidget {
 
   Widget _buildDetailRow(String label, String value, bool isDark, {Color? statusColor}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -249,12 +279,14 @@ class _EditExpenseDialogState extends State<_EditExpenseDialog> {
   late TextEditingController _noteController;
   late CategoryModel _selectedCategory;
   late DateTime _selectedDate;
+  late String _paymentMode;
 
   @override
   void initState() {
     super.initState();
     _amountController = TextEditingController(text: widget.expense.amount.toString());
     _noteController = TextEditingController(text: widget.expense.note ?? '');
+    _paymentMode = widget.expense.paymentMode;
     final categories = context.read<CategoryProvider>().categories;
     _selectedCategory = categories.firstWhere(
       (c) => c.categoryName == widget.expense.categoryName,
@@ -279,6 +311,7 @@ class _EditExpenseDialogState extends State<_EditExpenseDialog> {
       categoryId: _selectedCategory.id ?? 1,
       categoryName: _selectedCategory.categoryName,
       note: _noteController.text.trim(),
+      paymentMode: _paymentMode,
       expenseDate: _selectedDate,
       updatedAt: DateTime.now(),
     );
@@ -294,10 +327,12 @@ class _EditExpenseDialogState extends State<_EditExpenseDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final categories = context.watch<CategoryProvider>().categories;
+    final categories = context.watch<CategoryProvider>().categories.where((c) {
+      return c.categoryType == widget.expense.transactionType;
+    }).toList();
 
     return AlertDialog(
-      title: const Text('Edit Expense'),
+      title: Text('Edit ${widget.expense.isIncome ? "Income" : "Expense"}'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -305,12 +340,12 @@ class _EditExpenseDialogState extends State<_EditExpenseDialog> {
             TextField(
               controller: _amountController,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'Amount'),
+              decoration: const InputDecoration(labelText: 'Amount (₹)'),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<CategoryModel>(
-              initialValue: _selectedCategory,
-              decoration: const InputDecoration(labelText: 'Category'),
+              initialValue: categories.contains(_selectedCategory) ? _selectedCategory : (categories.isNotEmpty ? categories.first : null),
+              decoration: InputDecoration(labelText: widget.expense.isIncome ? 'Source' : 'Category'),
               items: categories.map((cat) {
                 return DropdownMenuItem(
                   value: cat,
@@ -322,9 +357,20 @@ class _EditExpenseDialogState extends State<_EditExpenseDialog> {
               },
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _paymentMode,
+              decoration: const InputDecoration(labelText: 'Payment Mode'),
+              items: AppConstants.paymentModes.map((pm) {
+                return DropdownMenuItem(value: pm, child: Text(pm));
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) setState(() => _paymentMode = val);
+              },
+            ),
+            const SizedBox(height: 12),
             TextField(
               controller: _noteController,
-              decoration: const InputDecoration(labelText: 'Note (Optional)'),
+              decoration: const InputDecoration(labelText: 'Remarks / Note'),
             ),
           ],
         ),

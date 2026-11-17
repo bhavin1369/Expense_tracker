@@ -33,7 +33,14 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        fun notifyExpenseAddedFromOverlay(txnId: String, amount: Double, categoryName: String, note: String) {
+        fun notifyExpenseAddedFromOverlay(
+            txnId: String,
+            amount: Double,
+            categoryName: String,
+            note: String,
+            transactionType: String = "expense",
+            paymentMode: String = "UPI"
+        ) {
             instance?.runOnUiThread {
                 methodChannel?.invokeMethod(
                     "onOverlayExpenseAdded",
@@ -41,7 +48,9 @@ class MainActivity : FlutterActivity() {
                         "transaction_id" to txnId,
                         "amount" to amount,
                         "category_name" to categoryName,
-                        "note" to note
+                        "note" to note,
+                        "transaction_type" to transactionType,
+                        "payment_mode" to paymentMode
                     )
                 )
             }

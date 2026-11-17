@@ -27,6 +27,7 @@ class ExpenseRepository {
   Future<List<ExpenseModel>> getAllExpenses({
     String? searchQuery,
     int? categoryId,
+    String? transactionType,
     DateTime? startDate,
     DateTime? endDate,
     double? minAmount,
@@ -37,6 +38,7 @@ class ExpenseRepository {
     return await _dbHelper.getAllExpenses(
       searchQuery: searchQuery,
       categoryId: categoryId,
+      transactionType: transactionType,
       startDate: startDate,
       endDate: endDate,
       minAmount: minAmount,
@@ -52,6 +54,10 @@ class ExpenseRepository {
 
   Future<void> updateExcelSyncStatus(String transactionId, bool isSynced) async {
     await _dbHelper.updateExpenseExcelSyncStatus(transactionId, isSynced);
+  }
+
+  Future<void> updateSyncStatus(String transactionId, String status) async {
+    await _dbHelper.updateExpenseSyncStatus(transactionId, status);
   }
 
   Future<int> importExpensesFromParsedData(
